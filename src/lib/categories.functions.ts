@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireAdmin } from "./admin-session.server";
 
 async function db() {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
 }
 
@@ -26,7 +26,7 @@ const CreateInput = z.object({
 });
 
 export const createCategory = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => CreateInput.parse(d))
+  .validator((d: unknown) => CreateInput.parse(d))
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();
@@ -47,7 +47,7 @@ const UpdateInput = z.object({
 });
 
 export const updateCategory = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => UpdateInput.parse(d))
+  .validator((d: unknown) => UpdateInput.parse(d))
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();
@@ -64,7 +64,7 @@ export const updateCategory = createServerFn({ method: "POST" })
   });
 
 export const deleteCategory = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();

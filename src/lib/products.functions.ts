@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireAdmin } from "./admin-session.server";
 
 async function db() {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
 }
 
@@ -19,7 +19,7 @@ export const listProducts = createServerFn({ method: "GET" }).handler(async () =
 });
 
 export const getProduct = createServerFn({ method: "GET" })
-  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();
@@ -48,7 +48,7 @@ const SaveInput = z.object({
 });
 
 export const saveProduct = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => SaveInput.parse(d))
+  .validator((d: unknown) => SaveInput.parse(d))
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();
@@ -105,7 +105,7 @@ export const saveProduct = createServerFn({ method: "POST" })
   });
 
 export const deleteProduct = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();

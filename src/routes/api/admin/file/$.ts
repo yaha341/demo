@@ -13,7 +13,7 @@ export const Route = createFileRoute("/api/admin/file/$")({
         if (!["product-files", "payment-proofs", "product-images"].includes(bucket)) {
           return new Response("Bad bucket", { status: 400 });
         }
-        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
         const { data, error } = await supabaseAdmin.storage.from(bucket).download(splat);
         if (error || !data) return new Response("Not found", { status: 404 });
         const buf = await data.arrayBuffer();

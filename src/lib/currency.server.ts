@@ -5,7 +5,7 @@ const TTL_MS = 6 * 60 * 60 * 1000; // 6h
 type Cached = { ts: number; rates: Record<string, number> };
 
 async function loadCache(): Promise<Cached | null> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { data } = await supabaseAdmin
     .from("app_settings")
     .select("value")
@@ -20,7 +20,7 @@ async function loadCache(): Promise<Cached | null> {
 }
 
 async function saveCache(c: Cached) {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   await supabaseAdmin
     .from("app_settings")
     .upsert({ key: CACHE_KEY, value: JSON.stringify(c) }, { onConflict: "key" });

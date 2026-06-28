@@ -12,7 +12,7 @@ type BotUser = {
 };
 
 async function db() {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
 }
 
@@ -20,6 +20,8 @@ function originFromState(): string {
   // Use stable preview URL as image origin. Project ID hardcoded in env at deploy.
   return (
     process.env.PUBLIC_APP_URL ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "") ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
     `https://project--79250394-984a-476c-a6aa-efe3efcc4b0e-dev.lovable.app`
   );
 }
@@ -598,7 +600,7 @@ export async function handleUpdate(update: any) {
       const biggest = msg.photo[msg.photo.length - 1];
       const file = await downloadTelegramFile(biggest.file_id);
       if (file) {
-        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
         const key = `order-${orderId}/${Date.now()}.jpg`;
         await supabaseAdmin.storage.from("payment-proofs").upload(key, file.bytes, {
           contentType: file.mime,

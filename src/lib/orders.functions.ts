@@ -4,7 +4,7 @@ import { requireAdmin } from "./admin-session.server";
 import { tg, tgSendMultipart } from "./telegram.server";
 
 async function db() {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
 }
 
@@ -21,7 +21,7 @@ export const listOrders = createServerFn({ method: "GET" }).handler(async () => 
 });
 
 export const getOrder = createServerFn({ method: "GET" })
-  .inputValidator((d: unknown) => z.object({ id: z.number().int() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.number().int() }).parse(d))
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();
@@ -35,14 +35,14 @@ export const getOrder = createServerFn({ method: "GET" })
   });
 
 export const confirmOrder = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => z.object({ id: z.number().int() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.number().int() }).parse(d))
   .handler(async ({ data }) => {
     await requireAdmin();
     return await deliverOrder(data.id);
   });
 
 export const rejectOrder = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => z.object({ id: z.number().int(), note: z.string().max(500).optional() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.number().int(), note: z.string().max(500).optional() }).parse(d))
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();
@@ -62,7 +62,7 @@ export const rejectOrder = createServerFn({ method: "POST" })
 
 // Shared: deliver files to user and mark order delivered. Used by admin panel and bot callback.
 export async function deliverOrder(orderId: number) {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { data: order, error } = await supabaseAdmin
     .from("orders")
     .select("*, order_items(*)")

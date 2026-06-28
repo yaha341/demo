@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet, Link, redirect, useRouter } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { adminCheck, adminLogout } from "@/lib/admin.functions";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components-ui/button";
 
 export const Route = createFileRoute("/admin")({
   beforeLoad: async () => {

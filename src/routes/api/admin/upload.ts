@@ -17,7 +17,7 @@ export const Route = createFileRoute("/api/admin/upload")({
         const ext = (file.name.split(".").pop() || "bin").toLowerCase().slice(0, 10);
         const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
         const bytes = new Uint8Array(await file.arrayBuffer());
-        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
         const { error } = await supabaseAdmin.storage.from(bucket).upload(key, bytes, {
           contentType: file.type || "application/octet-stream",
           upsert: false,

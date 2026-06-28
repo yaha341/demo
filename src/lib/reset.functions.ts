@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireAdmin } from "./admin-session.server";
 
 async function db() {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
 }
 

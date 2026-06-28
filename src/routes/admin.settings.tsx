@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button } from "@/components-ui/button";
+import { Input } from "@/components-ui/input";
+import { Label } from "@/components-ui/label";
 import { getSettings, saveSetting } from "@/lib/settings.functions";
 import { resetAllData } from "@/lib/reset.functions";
 

@@ -5,7 +5,7 @@ import { getAdminSession, isAdminAuthed } from "./admin-session.server";
 const LoginInput = z.object({ username: z.string().min(1), password: z.string().min(1) });
 
 export const adminLogin = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) => LoginInput.parse(data))
+  .validator((data: unknown) => LoginInput.parse(data))
   .handler(async ({ data }) => {
     const expectedUser = process.env.ADMIN_USERNAME || "admin";
     const expectedPass = process.env.ADMIN_PASSWORD || "admin";

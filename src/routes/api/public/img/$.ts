@@ -6,7 +6,7 @@ export const Route = createFileRoute("/api/public/img/$")({
       GET: async ({ params }) => {
         const splat = params._splat;
         if (!splat) return new Response("Not found", { status: 404 });
-        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
         const { data, error } = await supabaseAdmin.storage
           .from("product-images")
           .download(splat);

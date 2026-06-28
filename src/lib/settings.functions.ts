@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireAdmin } from "./admin-session.server";
 
 async function db() {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
 }
 
@@ -20,7 +20,7 @@ export const getSettings = createServerFn({ method: "GET" }).handler(async () =>
 const SaveInput = z.object({ key: z.string().min(1).max(100), value: z.string().max(2000) });
 
 export const saveSetting = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => SaveInput.parse(d))
+  .validator((d: unknown) => SaveInput.parse(d))
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();

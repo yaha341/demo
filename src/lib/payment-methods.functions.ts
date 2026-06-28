@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireAdmin } from "./admin-session.server";
 
 async function db() {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
 }
 
@@ -26,7 +26,7 @@ const SaveInput = z.object({
 });
 
 export const savePaymentMethod = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => SaveInput.parse(d))
+  .validator((d: unknown) => SaveInput.parse(d))
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();
@@ -58,7 +58,7 @@ export const savePaymentMethod = createServerFn({ method: "POST" })
   });
 
 export const deletePaymentMethod = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();

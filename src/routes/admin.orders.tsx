@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components-ui/button";
 import { confirmOrder, listOrders, rejectOrder } from "@/lib/orders.functions";
 import { useState } from "react";
 
