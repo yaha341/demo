@@ -47,7 +47,7 @@ export const resetAllData = createServerFn({ method: "POST" }).handler(async () 
 
   // Reset orders sequence so numbering starts from 1
   try {
-    await (s as any).rpc("exec_sql"); // noop if not present
+    await (s as any).rpc("reset_orders_sequence"); // noop if not present
   } catch {}
 
   // Wipe storage buckets
