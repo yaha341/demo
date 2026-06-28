@@ -11,6 +11,7 @@ import {
   listProducts,
   saveProduct,
 } from "@/lib/products.functions";
+import { listPaymentMethods } from "@/lib/payment-methods.functions";
 
 export const Route = createFileRoute("/admin/products")({
   component: ProductsPage,
@@ -78,19 +79,7 @@ function ProductsPage() {
   
   const pMethods = useQuery({
     queryKey: ["payment-methods-admin"],
-    queryFn: async () => {
-      const res = await fetch("/api/admin/rpc", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "select",
-          table: "payment_methods",
-          query: { eq: ["is_active", true], order: ["sort_order", "asc"] },
-        }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      return (await res.json()) as any[];
-    }
+    queryFn: () => listPaymentMethods(),
   });
 
   const list = (products.data ?? []) as any[];
