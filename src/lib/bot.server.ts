@@ -172,7 +172,8 @@ async function sendProductCard(chat_id: number, p: any, userCountryCode: string 
     }
   }
 
-  const caption = `📦 <b>${escapeHtml(p.name as string)}</b>\n\n${escapeHtml((p.description as string) || "")}\n\n💰 <b>${displayPrice} ${displayCurrency}</b>`;
+  const desc = p.description ? `\n\n${escapeHtml(p.description as string)}` : "";
+  const caption = `📦 <b>${escapeHtml(p.name as string)}</b>${desc}\n\n💰 <b>${displayPrice} ${displayCurrency}</b>`;
   const reply_markup = {
     inline_keyboard: [
       [{ text: "➕ В корзину", callback_data: `add:${p.id}` }]
