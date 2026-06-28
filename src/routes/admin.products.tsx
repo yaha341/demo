@@ -47,12 +47,26 @@ const empty: Product = {
 };
 
 async function uploadFile(file: File, bucket: "product-images" | "product-files") {
-  const fd = new FormData();
-  fd.append("file", file);
-  fd.append("bucket", bucket);
-  const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
-  if (!res.ok) throw new Error(await res.text());
-  return (await res.json()) as { path: string; name: string };
+  // 1. Получаем одноразовую ссылку для прямой загрузки от сервера
+  const resUrl = await fetch("/api/admin/signed-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ bucket, filename: file.name }),
+  });
+  if (!resUrl.ok) throw new Error(await resUrl.text());
+  const { path, name, signedUrl } = await resUrl.json();
+
+  // 2. Грузим файл напрямую в Supabase в обход лимитов Vercel
+  const resUpload = await fetch(signedUrl, {
+    method: "PUT",
+    body: file,
+    headers: {
+      "Content-Type": file.type || "application/octet-stream",
+    },
+  });
+  if (!resUpload.ok) throw new Error(await resUpload.text());
+  
+  return { path, name };
 }
 
 function ProductsPage() {
@@ -89,17 +103,25 @@ function ProductsPage() {
   async function onImagesChange(files: FileList | null) {
     if (!files) return;
     const uploaded: Img[] = [];
-    for (const f of Array.from(files)) {
-      const r = await uploadFile(f, "product-images");
-      uploaded.push({ image_path: r.path, sort_order: images.length + uploaded.length });
+    try {
+      for (const f of Array.from(files)) {
+        const r = await uploadFile(f, "product-images");
+        uploaded.push({ image_path: r.path, sort_order: images.length + uploaded.length });
+      }
+      setImages([...images, ...uploaded]);
+    } catch (e: any) {
+      alert("Ошибка загрузки фото: " + e.message);
     }
-    setImages([...images, ...uploaded]);
   }
 
   async function onFileChange(file: File | null) {
     if (!file || !editing) return;
-    const r = await uploadFile(file, "product-files");
-    setEditing({ ...editing, file_path: r.path, file_name: r.name });
+    try {
+      const r = await uploadFile(file, "product-files");
+      setEditing({ ...editing, file_path: r.path, file_name: r.name });
+    } catch (e: any) {
+      alert("Ошибка загрузки файла: " + e.message);
+    }
   }
 
   async function onSave() {
