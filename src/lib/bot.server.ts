@@ -8,7 +8,7 @@ type BotUser = {
   last_name: string | null;
   language_code: string | null;
   contact_phone: string | null;
-  state: { mode?: string; pending_order_id?: number } | null;
+  state: { mode?: string; pending_order_id?: number; country_code?: string; country_name?: string } | null;
 };
 
 async function db() {
@@ -79,13 +79,13 @@ async function sendMain(chat_id: number, text = "Выберите раздел:"
   await tg("sendMessage", { chat_id, text, reply_markup: mainMenu() });
 }
 
-async function showCategories(chat_id: number, parentId: string | null) {
+async function showCategories(chat_id: number, parentId: string | null, userCountryCode?: string) {
   const s = await db();
   const q = s.from("categories").select("id, name").order("sort_order").order("name");
   const { data: cats } = parentId ? await q.eq("parent_id", parentId) : await q.is("parent_id", null);
   const productsQuery = s
     .from("products")
-    .select("id, name, price, currency")
+    .select("id, name, price, currency, country_prices")
     .eq("is_active", true)
     .order("sort_order")
     .order("name");
@@ -98,9 +98,21 @@ async function showCategories(chat_id: number, parentId: string | null) {
     buttons.push([{ text: `📁 ${c.name as string}`, callback_data: `cat:${c.id}` }]);
   }
   for (const p of products ?? []) {
+    let displayPrice = p.price;
+    let displayCurrency = p.currency;
+    if (userCountryCode && p.country_prices) {
+      const cp = (p.country_prices as Record<string, number>)[userCountryCode];
+      if (cp) {
+        displayPrice = cp;
+        // Lookup currency for this country
+        const { data: m } = await s.from("payment_methods").select("currency").eq("country_code", userCountryCode).maybeSingle();
+        if (m) displayCurrency = m.currency;
+      }
+    }
+
     buttons.push([
       {
-        text: `📦 ${p.name as string} — ${p.price} ${p.currency}`,
+        text: `📦 ${p.name as string} — ${displayPrice} ${displayCurrency}`,
         callback_data: `prod:${p.id}`,
       },
     ]);
@@ -126,7 +138,7 @@ async function showCategories(chat_id: number, parentId: string | null) {
   });
 }
 
-async function showProduct(chat_id: number, product_id: string) {
+async function showProduct(chat_id: number, product_id: string, userCountryCode?: string) {
   const s = await db();
   const { data: p } = await s
     .from("products")
@@ -142,7 +154,18 @@ async function showProduct(chat_id: number, product_id: string) {
     .slice()
     .sort((a, b) => a.sort_order - b.sort_order);
 
-  const caption = `📦 *${escapeMd(p.name as string)}*\n\n${escapeMd((p.description as string) || "")}\n\n💰 *${p.price} ${p.currency}*`;
+  let displayPrice = p.price;
+  let displayCurrency = p.currency;
+  if (userCountryCode && p.country_prices) {
+    const cp = (p.country_prices as Record<string, number>)[userCountryCode];
+    if (cp) {
+      displayPrice = cp;
+      const { data: m } = await s.from("payment_methods").select("currency").eq("country_code", userCountryCode).maybeSingle();
+      if (m) displayCurrency = m.currency;
+    }
+  }
+
+  const caption = `📦 *${escapeMd(p.name as string)}*\n\n${escapeMd((p.description as string) || "")}\n\n💰 *${displayPrice} ${displayCurrency}*`;
 
   if (imgs.length === 0) {
     await tg("sendMessage", {
@@ -202,11 +225,12 @@ async function addToCart(telegram_id: number, product_id: string) {
   }
 }
 
-async function showCart(chat_id: number, telegram_id: number) {
+async function showCart(chat_id: number, user: BotUser) {
+  const telegram_id = user.telegram_id;
   const s = await db();
   const { data: items } = await s
     .from("cart_items")
-    .select("id, quantity, products(id, name, price, currency)")
+    .select("id, quantity, products(id, name, price, currency, country_prices)")
     .eq("telegram_id", telegram_id);
   if (!items?.length) {
     await tg("sendMessage", { chat_id, text: "🛒 Корзина пуста." });
@@ -214,15 +238,31 @@ async function showCart(chat_id: number, telegram_id: number) {
   }
   let total = 0;
   let currency = "KZT";
+  
+  // get user country currency
+  if (user.state?.country_code) {
+    const { data: m } = await s.from("payment_methods").select("currency").eq("country_code", user.state.country_code).maybeSingle();
+    if (m) currency = m.currency;
+  }
+
   let text = "🛒 *Ваша корзина:*\n\n";
   const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
   for (const it of items as any[]) {
     const p = it.products;
     if (!p) continue;
-    const line = Number(p.price) * Number(it.quantity);
+    
+    let displayPrice = p.price;
+    if (user.state?.country_code && p.country_prices) {
+      const cp = (p.country_prices as Record<string, number>)[user.state.country_code];
+      if (cp) displayPrice = cp;
+      else displayPrice = await convertAmount(p.price, p.currency, currency); // fallback conversion if manual price missing
+    } else {
+      displayPrice = await convertAmount(p.price, p.currency, currency);
+    }
+    
+    const line = Number(displayPrice) * Number(it.quantity);
     total += line;
-    currency = p.currency;
-    text += `• ${p.name} × ${it.quantity} — ${line} ${p.currency}\n`;
+    text += `• ${p.name} × ${it.quantity} — ${line} ${currency}\n`;
     buttons.push([
       { text: `❌ Убрать «${p.name}»`, callback_data: `rem:${it.id}` },
     ]);
@@ -240,7 +280,8 @@ async function showCart(chat_id: number, telegram_id: number) {
   });
 }
 
-async function startCheckout(chat_id: number, telegram_id: number) {
+async function startCheckout(chat_id: number, user: BotUser) {
+  const telegram_id = user.telegram_id;
   const s = await db();
   const { count } = await s
     .from("cart_items")
@@ -250,13 +291,8 @@ async function startCheckout(chat_id: number, telegram_id: number) {
     await tg("sendMessage", { chat_id, text: "🛒 Корзина пуста." });
     return;
   }
-  const { data: user } = await s
-    .from("bot_users")
-    .select("contact_phone")
-    .eq("telegram_id", telegram_id)
-    .single();
-  if (!user?.contact_phone) {
-    await setState(telegram_id, { mode: "awaiting_contact" });
+  if (!user.contact_phone) {
+    await setState(telegram_id, { ...user.state, mode: "awaiting_contact" });
     await tg("sendMessage", {
       chat_id,
       text: "Для оформления заказа поделитесь, пожалуйста, контактом — продавец свяжется с вами при необходимости.",
@@ -268,10 +304,17 @@ async function startCheckout(chat_id: number, telegram_id: number) {
     });
     return;
   }
-  await askCountry(chat_id, telegram_id);
+  
+  if (!user.state?.country_code) {
+    await askCountry(chat_id, telegram_id, true);
+    return;
+  }
+
+  // user has contact and country, proceed directly to placeOrder
+  await placeOrder(chat_id, user, user.state.country_code);
 }
 
-async function askCountry(chat_id: number, telegram_id: number) {
+async function askCountry(chat_id: number, telegram_id: number, forCheckout = false) {
   const s = await db();
   const { data: methods } = await s
     .from("payment_methods")
@@ -285,18 +328,22 @@ async function askCountry(chat_id: number, telegram_id: number) {
     });
     return;
   }
+  
+  const prefix = forCheckout ? "country:" : "setcountry:";
+  
   await tg("sendMessage", {
     chat_id,
-    text: "Выберите вашу страну для отображения реквизитов:",
+    text: "Пожалуйста, выберите вашу страну (для отображения цен и реквизитов):",
     reply_markup: {
       inline_keyboard: methods.map((m) => [
-        { text: m.country_name as string, callback_data: `country:${m.country_code}` },
+        { text: m.country_name as string, callback_data: `${prefix}${m.country_code}` },
       ]),
     },
   });
 }
 
-async function placeOrder(chat_id: number, telegram_id: number, country_code: string) {
+async function placeOrder(chat_id: number, user: BotUser, country_code: string) {
+  const telegram_id = user.telegram_id;
   const s = await db();
   const { data: method } = await s
     .from("payment_methods")
@@ -305,25 +352,29 @@ async function placeOrder(chat_id: number, telegram_id: number, country_code: st
     .single();
   const { data: items } = await s
     .from("cart_items")
-    .select("id, quantity, products(id, name, price, currency, file_path, file_name)")
+    .select("id, quantity, products(id, name, price, currency, file_path, file_name, country_prices)")
     .eq("telegram_id", telegram_id);
   if (!items?.length) {
     await tg("sendMessage", { chat_id, text: "🛒 Корзина пуста." });
     return;
   }
-  const { data: user } = await s
-    .from("bot_users")
-    .select("*")
-    .eq("telegram_id", telegram_id)
-    .single();
 
   let total = 0;
   let currency = (method?.currency as string) || "KZT";
   for (const it of items as any[]) {
     if (!it.products) continue;
-    const line = Number(it.products.price) * Number(it.quantity);
-    const converted = await convertAmount(line, it.products.currency || "KZT", currency);
-    total += converted;
+    
+    let displayPrice = it.products.price;
+    if (it.products.country_prices) {
+      const cp = (it.products.country_prices as Record<string, number>)[country_code];
+      if (cp) displayPrice = cp;
+      else displayPrice = await convertAmount(it.products.price, it.products.currency, currency);
+    } else {
+      displayPrice = await convertAmount(it.products.price, it.products.currency, currency);
+    }
+    
+    const line = Number(displayPrice) * Number(it.quantity);
+    total += line;
   }
 
   const display = [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim() || (user?.username ? `@${user.username}` : `id${telegram_id}`);
@@ -349,19 +400,26 @@ async function placeOrder(chat_id: number, telegram_id: number, country_code: st
   }
 
   const rows = await Promise.all(
-    (items as any[]).map(async (it) => ({
-      order_id: order.id,
-      product_id: it.products?.id,
-      name_snapshot: it.products?.name,
-      price_snapshot: await convertAmount(
-        Number(it.products?.price ?? 0),
-        it.products?.currency || "KZT",
-        currency,
-      ),
-      quantity: it.quantity,
-      file_path_snapshot: it.products?.file_path ?? null,
-      file_name_snapshot: it.products?.file_name ?? null,
-    })),
+    (items as any[]).map(async (it) => {
+      let displayPrice = it.products?.price ?? 0;
+      if (it.products?.country_prices) {
+        const cp = (it.products.country_prices as Record<string, number>)[country_code];
+        if (cp) displayPrice = cp;
+        else displayPrice = await convertAmount(it.products?.price ?? 0, it.products?.currency || "KZT", currency);
+      } else {
+        displayPrice = await convertAmount(it.products?.price ?? 0, it.products?.currency || "KZT", currency);
+      }
+      
+      return {
+        order_id: order.id,
+        product_id: it.products?.id,
+        name_snapshot: it.products?.name,
+        price_snapshot: displayPrice,
+        quantity: it.quantity,
+        file_path_snapshot: it.products?.file_path ?? null,
+        file_name_snapshot: it.products?.file_name ?? null,
+      };
+    }),
   );
   await s.from("order_items").insert(rows);
   await s.from("cart_items").delete().eq("telegram_id", telegram_id);
@@ -430,28 +488,46 @@ ${escapeMd(itemsText)}
   }
 }
 
-async function showSearch(chat_id: number, telegram_id: number, query: string) {
+async function showSearch(chat_id: number, user: BotUser, query: string) {
+  const telegram_id = user.telegram_id;
   const s = await db();
   const term = `%${query.replace(/[%_]/g, "")}%`;
   const { data } = await s
     .from("products")
-    .select("id, name, price, currency")
+    .select("id, name, price, currency, country_prices")
     .eq("is_active", true)
     .or(`name.ilike.${term},description.ilike.${term},keywords.ilike.${term}`)
     .limit(20);
-  await setState(telegram_id, { mode: "idle" });
+  await setState(telegram_id, { ...user.state, mode: "idle" });
   if (!data?.length) {
     await tg("sendMessage", { chat_id, text: "Ничего не нашлось. Попробуйте другое слово." });
     return;
   }
+  
+  let targetCurrency = "KZT";
+  if (user.state?.country_code) {
+    const { data: m } = await s.from("payment_methods").select("currency").eq("country_code", user.state.country_code).maybeSingle();
+    if (m) targetCurrency = m.currency;
+  }
+  
+  const buttons = [];
+  for (const p of data) {
+    let displayPrice = p.price;
+    let curr = p.currency;
+    if (user.state?.country_code && p.country_prices) {
+      const cp = (p.country_prices as Record<string, number>)[user.state.country_code];
+      if (cp) {
+        displayPrice = cp;
+        curr = targetCurrency;
+      }
+    }
+    buttons.push([{ text: `${p.name} — ${displayPrice} ${curr}`, callback_data: `prod:${p.id}` }]);
+  }
+  
   await tg("sendMessage", {
     chat_id,
     text: `🔍 Найдено: ${data.length}`,
-    reply_markup: {
-      inline_keyboard: data.map((p) => [
-        { text: `${p.name} — ${p.price} ${p.currency}`, callback_data: `prod:${p.id}` },
-      ]),
-    },
+    reply_markup: { inline_keyboard: buttons },
   });
 }
 
@@ -492,9 +568,19 @@ export async function handleUpdate(update: any) {
       const data: string = cq.data || "";
       await tg("answerCallbackQuery", { callback_query_id: cq.id });
 
-      if (data === "cat:root") return showCategories(chat_id, null);
-      if (data.startsWith("cat:")) return showCategories(chat_id, data.slice(4));
-      if (data.startsWith("prod:")) return showProduct(chat_id, data.slice(5));
+      const user = await upsertUser(cq.from as any);
+      
+      // Before allowing navigation, require country code
+      if (!data.startsWith("setcountry:") && !data.startsWith("confirm:") && !data.startsWith("reject:") && data !== "clear" && !data.startsWith("rem:") && !data.startsWith("add:")) {
+        if (!user.state?.country_code) {
+          await askCountry(chat_id, from_id);
+          return;
+        }
+      }
+
+      if (data === "cat:root") return showCategories(chat_id, null, user.state?.country_code);
+      if (data.startsWith("cat:")) return showCategories(chat_id, data.slice(4), user.state?.country_code);
+      if (data.startsWith("prod:")) return showProduct(chat_id, data.slice(5), user.state?.country_code);
       if (data.startsWith("add:")) {
         await addToCart(from_id, data.slice(4));
         await tg("sendMessage", { chat_id, text: "✅ Добавлено в корзину." });
@@ -503,7 +589,7 @@ export async function handleUpdate(update: any) {
       if (data.startsWith("rem:")) {
         const s = await db();
         await s.from("cart_items").delete().eq("id", data.slice(4));
-        return showCart(chat_id, from_id);
+        return showCart(chat_id, user);
       }
       if (data === "clear") {
         const s = await db();
@@ -511,8 +597,18 @@ export async function handleUpdate(update: any) {
         await tg("sendMessage", { chat_id, text: "🗑 Корзина очищена." });
         return;
       }
-      if (data === "checkout") return startCheckout(chat_id, from_id);
-      if (data.startsWith("country:")) return placeOrder(chat_id, from_id, data.slice(8));
+      if (data === "checkout") return startCheckout(chat_id, user);
+      if (data.startsWith("country:")) return placeOrder(chat_id, user, data.slice(8));
+      
+      if (data.startsWith("setcountry:")) {
+        const code = data.slice(11);
+        const s = await db();
+        const { data: m } = await s.from("payment_methods").select("country_name").eq("country_code", code).maybeSingle();
+        await setState(from_id, { ...user.state, country_code: code, country_name: m?.country_name });
+        await tg("sendMessage", { chat_id, text: `✅ Ваша страна сохранена: ${m?.country_name}\nТеперь вы видите корректные цены!` });
+        await sendMain(chat_id);
+        return;
+      }
 
       // Admin actions
       if (data.startsWith("confirm:")) {
@@ -571,7 +667,11 @@ export async function handleUpdate(update: any) {
           parse_mode: "HTML",
         });
       }
-      await sendMain(chat_id, `Привет, ${user.first_name || "друг"}! Добро пожаловать в магазин.`);
+      if (!user.state?.country_code) {
+        await askCountry(chat_id, from.id);
+      } else {
+        await sendMain(chat_id, `Привет, ${user.first_name || "друг"}! Добро пожаловать в магазин.`);
+      }
       return;
     }
     if (msg.text === "/id") {
@@ -588,8 +688,12 @@ export async function handleUpdate(update: any) {
         reply_markup: mainMenu(),
       });
       if (user.state?.mode === "awaiting_contact") {
-        await setState(from.id, { mode: "idle" });
-        await askCountry(chat_id, from.id);
+        await setState(from.id, { ...user.state, mode: "idle" });
+        if (!user.state?.country_code) {
+          await askCountry(chat_id, from.id, true);
+        } else {
+          await placeOrder(chat_id, user, user.state.country_code);
+        }
       }
       return;
     }
@@ -611,7 +715,7 @@ export async function handleUpdate(update: any) {
           .update({ payment_proof_path: key, status: "awaiting_confirmation" })
           .eq("id", orderId);
       }
-      await setState(from.id, { mode: "idle" });
+      await setState(from.id, { ...user.state, mode: "idle", pending_order_id: undefined });
       await tg("sendMessage", {
         chat_id,
         text: `📨 Спасибо! Скриншот получен. Заказ #${orderId} отправлен на проверку. Как только продавец подтвердит оплату — бот пришлёт файлы.`,
@@ -623,22 +727,27 @@ export async function handleUpdate(update: any) {
 
     // Search text input
     if (user.state?.mode === "search" && msg.text) {
-      return showSearch(chat_id, from.id, msg.text);
+      return showSearch(chat_id, user, msg.text);
+    }
+
+    if (!user.state?.country_code && msg.text && ["📚 Каталог", "🔍 Поиск", "🛒 Корзина", "📋 Мои заказы"].includes(msg.text)) {
+      await askCountry(chat_id, from.id);
+      return;
     }
 
     // Main menu buttons
     switch (msg.text) {
       case "📚 Каталог":
-        return showCategories(chat_id, null);
+        return showCategories(chat_id, null, user.state?.country_code);
       case "🔍 Поиск":
-        await setState(from.id, { mode: "search" });
+        await setState(from.id, { ...user.state, mode: "search" });
         await tg("sendMessage", {
           chat_id,
           text: "Напишите название или ключевое слово:",
         });
         return;
       case "🛒 Корзина":
-        return showCart(chat_id, from.id);
+        return showCart(chat_id, user);
       case "📋 Мои заказы":
         return showMyOrders(chat_id, from.id);
     }

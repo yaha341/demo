@@ -30,6 +30,7 @@ type Product = {
   file_path: string | null;
   file_name: string | null;
   product_images?: Img[];
+  country_prices?: Record<string, number>;
 };
 
 const empty: Product = {
@@ -44,6 +45,7 @@ const empty: Product = {
   file_path: null,
   file_name: null,
   product_images: [],
+  country_prices: {},
 };
 
 async function uploadFile(file: File, bucket: "product-images" | "product-files") {
@@ -73,6 +75,24 @@ function ProductsPage() {
   const qc = useQueryClient();
   const products = useQuery({ queryKey: ["products"], queryFn: () => listProducts() });
   const cats = useQuery({ queryKey: ["cats-flat"], queryFn: () => listCategoriesForProducts() });
+  
+  const pMethods = useQuery({
+    queryKey: ["payment-methods-admin"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/rpc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "select",
+          table: "payment_methods",
+          query: { eq: ["is_active", true], order: ["sort_order", "asc"] },
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as any[];
+    }
+  });
+
   const list = (products.data ?? []) as any[];
   const [editing, setEditing] = useState<Product | null>(null);
   const [images, setImages] = useState<Img[]>([]);
@@ -95,6 +115,7 @@ function ProductsPage() {
       sort_order: p.sort_order ?? 0,
       file_path: p.file_path,
       file_name: p.file_name,
+      country_prices: p.country_prices || {},
     });
     const imgs = (p.product_images ?? []).slice().sort((a: Img, b: Img) => a.sort_order - b.sort_order);
     setImages(imgs);
@@ -142,6 +163,7 @@ function ProductsPage() {
           file_path: editing.file_path,
           file_name: editing.file_name,
           image_paths: images.map((i) => i.image_path),
+          country_prices: editing.country_prices,
         },
       });
       setEditing(null);
@@ -264,7 +286,36 @@ function ProductsPage() {
             </div>
           </div>
 
-          <div className="space-y-2">
+          {pMethods.data && pMethods.data.length > 0 && (
+            <div className="space-y-4 pt-4 border-t">
+              <h3 className="font-medium">Цены для разных стран (вручную)</h3>
+              <p className="text-xs text-muted-foreground">Если оставить поле пустым — будет работать автоматическая конвертация базовой цены.</p>
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {pMethods.data.map((m) => (
+                  <div key={m.country_code} className="space-y-2">
+                    <Label>{m.country_name} ({m.currency})</Label>
+                    <Input
+                      type="number"
+                      placeholder="Авто (по курсу)"
+                      value={editing.country_prices?.[m.country_code] ?? ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const newPrices = { ...editing.country_prices };
+                        if (val === "") {
+                          delete newPrices[m.country_code];
+                        } else {
+                          newPrices[m.country_code] = Number(val);
+                        }
+                        setEditing({ ...editing, country_prices: newPrices });
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2 pt-4 border-t">
             <Label>Файл товара (PDF / архив / любой)</Label>
             <Input type="file" onChange={(e) => onFileChange(e.target.files?.[0] ?? null)} />
             {editing.file_name && (
