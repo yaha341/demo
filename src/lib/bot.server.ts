@@ -93,6 +93,12 @@ async function showCategories(chat_id: number, parentId: string | null, userCoun
     ? await productsQuery.eq("category_id", parentId)
     : await productsQuery.is("category_id", null);
 
+  let targetCurrency = "KZT";
+  if (userCountryCode) {
+    const { data: m } = await s.from("payment_methods").select("currency").eq("country_code", userCountryCode).maybeSingle();
+    if (m) targetCurrency = m.currency;
+  }
+
   const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
   for (const c of cats ?? []) {
     buttons.push([{ text: `📁 ${c.name as string}`, callback_data: `cat:${c.id}` }]);
@@ -100,13 +106,14 @@ async function showCategories(chat_id: number, parentId: string | null, userCoun
   for (const p of products ?? []) {
     let displayPrice = p.price;
     let displayCurrency = p.currency;
-    if (userCountryCode && p.country_prices) {
-      const cp = (p.country_prices as Record<string, number>)[userCountryCode];
+    
+    if (userCountryCode) {
+      displayCurrency = targetCurrency;
+      const cp = p.country_prices ? (p.country_prices as Record<string, number>)[userCountryCode] : null;
       if (cp) {
         displayPrice = cp;
-        // Lookup currency for this country
-        const { data: m } = await s.from("payment_methods").select("currency").eq("country_code", userCountryCode).maybeSingle();
-        if (m) displayCurrency = m.currency;
+      } else {
+        displayPrice = await convertAmount(p.price, p.currency, targetCurrency);
       }
     }
 
@@ -156,12 +163,15 @@ async function showProduct(chat_id: number, product_id: string, userCountryCode?
 
   let displayPrice = p.price;
   let displayCurrency = p.currency;
-  if (userCountryCode && p.country_prices) {
-    const cp = (p.country_prices as Record<string, number>)[userCountryCode];
+  if (userCountryCode) {
+    const { data: m } = await s.from("payment_methods").select("currency").eq("country_code", userCountryCode).maybeSingle();
+    if (m) displayCurrency = m.currency;
+    
+    const cp = p.country_prices ? (p.country_prices as Record<string, number>)[userCountryCode] : null;
     if (cp) {
       displayPrice = cp;
-      const { data: m } = await s.from("payment_methods").select("currency").eq("country_code", userCountryCode).maybeSingle();
-      if (m) displayCurrency = m.currency;
+    } else {
+      displayPrice = await convertAmount(p.price, p.currency, displayCurrency);
     }
   }
 
@@ -514,11 +524,14 @@ async function showSearch(chat_id: number, user: BotUser, query: string) {
   for (const p of data) {
     let displayPrice = p.price;
     let curr = p.currency;
-    if (user.state?.country_code && p.country_prices) {
-      const cp = (p.country_prices as Record<string, number>)[user.state.country_code];
+    
+    if (user.state?.country_code) {
+      curr = targetCurrency;
+      const cp = p.country_prices ? (p.country_prices as Record<string, number>)[user.state.country_code] : null;
       if (cp) {
         displayPrice = cp;
-        curr = targetCurrency;
+      } else {
+        displayPrice = await convertAmount(p.price, p.currency, targetCurrency);
       }
     }
     buttons.push([{ text: `${p.name} — ${displayPrice} ${curr}`, callback_data: `prod:${p.id}` }]);
