@@ -21,6 +21,7 @@ type Img = { id?: string; image_path: string; sort_order: number };
 type Product = {
   id?: string;
   category_id: string | null;
+  category_ids: string[];
   name: string;
   description: string;
   keywords: string;
@@ -36,6 +37,7 @@ type Product = {
 
 const empty: Product = {
   category_id: null,
+  category_ids: [],
   name: "",
   description: "",
   keywords: "",
@@ -95,6 +97,7 @@ function ProductsPage() {
     setEditing({
       id: p.id,
       category_id: p.category_id,
+      category_ids: p.category_ids || (p.category_id ? [p.category_id] : []),
       name: p.name,
       description: p.description ?? "",
       keywords: p.keywords ?? "",
@@ -142,6 +145,7 @@ function ProductsPage() {
         data: {
           id: editing.id,
           category_id: editing.category_id,
+          category_ids: editing.category_ids,
           name: editing.name,
           description: editing.description,
           keywords: editing.keywords,
@@ -186,21 +190,31 @@ function ProductsPage() {
               <Input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
             </div>
             <div className="space-y-2">
-              <Label>Категория</Label>
-              <select
-                className="w-full border rounded-md h-9 px-2 bg-background"
-                value={editing.category_id ?? ""}
-                onChange={(e) =>
-                  setEditing({ ...editing, category_id: e.target.value || null })
-                }
-              >
-                <option value="">— Без категории —</option>
+              <Label>Категории (можно выбрать несколько)</Label>
+              <div className="border rounded-md p-2 max-h-40 overflow-y-auto space-y-1 bg-background text-sm">
                 {(cats.data ?? []).map((c: any) => (
-                  <option key={c.id} value={c.id}>
+                  <label key={c.id} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={editing.category_ids.includes(c.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setEditing({ ...editing, category_ids: [...editing.category_ids, c.id] });
+                        } else {
+                          setEditing({
+                            ...editing,
+                            category_ids: editing.category_ids.filter((id) => id !== c.id),
+                          });
+                        }
+                      }}
+                    />
                     {c.name}
-                  </option>
+                  </label>
                 ))}
-              </select>
+                {(!cats.data || cats.data.length === 0) && (
+                  <div className="text-muted-foreground text-xs">Нет доступных категорий</div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -351,7 +365,12 @@ function ProductsPage() {
                   {p.name} {!p.is_active && <span className="text-xs text-muted-foreground">(скрыт)</span>}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {p.categories?.name || "без категории"} · {p.price} {p.currency}
+                  {p.category_ids && p.category_ids.length > 0
+                    ? p.category_ids
+                        .map((id: string) => cats.data?.find((c: any) => c.id === id)?.name)
+                        .filter(Boolean)
+                        .join(", ") || "без категории"
+                    : p.categories?.name || "без категории"} · {p.price} {p.currency}
                   {!p.file_path && <span className="text-destructive"> · нет файла</span>}
                 </div>
               </div>

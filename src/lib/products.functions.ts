@@ -34,7 +34,8 @@ export const getProduct = createServerFn({ method: "GET" })
 
 const SaveInput = z.object({
   id: z.string().uuid().optional(),
-  category_id: z.string().uuid().nullable().optional(),
+  category_id: z.string().uuid().nullable().optional(), // kept for backwards compatibility during migration
+  category_ids: z.array(z.string().uuid()).default([]),
   name: z.string().min(1).max(200),
   description: z.string().max(4000).default(""),
   keywords: z.string().max(500).default(""),
@@ -58,7 +59,8 @@ export const saveProduct = createServerFn({ method: "POST" })
       const { error } = await s
         .from("products")
         .update({
-          category_id: data.category_id ?? null,
+          category_id: data.category_ids[0] ?? null, // Sync the primary one just in case
+          category_ids: data.category_ids,
           name: data.name,
           description: data.description,
           keywords: data.keywords,
@@ -76,7 +78,8 @@ export const saveProduct = createServerFn({ method: "POST" })
       const { data: inserted, error } = await s
         .from("products")
         .insert({
-          category_id: data.category_id ?? null,
+          category_id: data.category_ids[0] ?? null,
+          category_ids: data.category_ids,
           name: data.name,
           description: data.description,
           keywords: data.keywords,
