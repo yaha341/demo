@@ -17,7 +17,9 @@ import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminProductsRouteImport } from './routes/admin.products'
 import { Route as AdminPaymentMethodsRouteImport } from './routes/admin.payment-methods'
 import { Route as AdminOrdersRouteImport } from './routes/admin.orders'
+import { Route as AdminInstagramRouteImport } from './routes/admin.instagram'
 import { Route as AdminCategoriesRouteImport } from './routes/admin.categories'
+import { Route as ApiIgWebhookRouteImport } from './routes/api/ig/webhook'
 import { Route as ApiAdminUploadRouteImport } from './routes/api/admin/upload'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram/webhook'
 import { Route as ApiPublicImgSplatRouteImport } from './routes/api/public/img/$'
@@ -63,10 +65,20 @@ const AdminOrdersRoute = AdminOrdersRouteImport.update({
   path: '/orders',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminInstagramRoute = AdminInstagramRouteImport.update({
+  id: '/instagram',
+  path: '/instagram',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminCategoriesRoute = AdminCategoriesRouteImport.update({
   id: '/categories',
   path: '/categories',
   getParentRoute: () => AdminRoute,
+} as any)
+const ApiIgWebhookRoute = ApiIgWebhookRouteImport.update({
+  id: '/api/ig/webhook',
+  path: '/api/ig/webhook',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAdminUploadRoute = ApiAdminUploadRouteImport.update({
   id: '/api/admin/upload',
@@ -95,12 +107,14 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
   '/admin/categories': typeof AdminCategoriesRoute
+  '/admin/instagram': typeof AdminInstagramRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/payment-methods': typeof AdminPaymentMethodsRoute
   '/admin/products': typeof AdminProductsRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/': typeof AdminIndexRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
+  '/api/ig/webhook': typeof ApiIgWebhookRoute
   '/api/admin/file/$': typeof ApiAdminFileSplatRoute
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
@@ -109,12 +123,14 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/admin/categories': typeof AdminCategoriesRoute
+  '/admin/instagram': typeof AdminInstagramRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/payment-methods': typeof AdminPaymentMethodsRoute
   '/admin/products': typeof AdminProductsRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin': typeof AdminIndexRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
+  '/api/ig/webhook': typeof ApiIgWebhookRoute
   '/api/admin/file/$': typeof ApiAdminFileSplatRoute
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
@@ -125,12 +141,14 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
   '/admin/categories': typeof AdminCategoriesRoute
+  '/admin/instagram': typeof AdminInstagramRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/payment-methods': typeof AdminPaymentMethodsRoute
   '/admin/products': typeof AdminProductsRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/': typeof AdminIndexRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
+  '/api/ig/webhook': typeof ApiIgWebhookRoute
   '/api/admin/file/$': typeof ApiAdminFileSplatRoute
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
@@ -142,12 +160,14 @@ export interface FileRouteTypes {
     | '/admin'
     | '/login'
     | '/admin/categories'
+    | '/admin/instagram'
     | '/admin/orders'
     | '/admin/payment-methods'
     | '/admin/products'
     | '/admin/settings'
     | '/admin/'
     | '/api/admin/upload'
+    | '/api/ig/webhook'
     | '/api/admin/file/$'
     | '/api/public/img/$'
     | '/api/public/telegram/webhook'
@@ -156,12 +176,14 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/admin/categories'
+    | '/admin/instagram'
     | '/admin/orders'
     | '/admin/payment-methods'
     | '/admin/products'
     | '/admin/settings'
     | '/admin'
     | '/api/admin/upload'
+    | '/api/ig/webhook'
     | '/api/admin/file/$'
     | '/api/public/img/$'
     | '/api/public/telegram/webhook'
@@ -171,12 +193,14 @@ export interface FileRouteTypes {
     | '/admin'
     | '/login'
     | '/admin/categories'
+    | '/admin/instagram'
     | '/admin/orders'
     | '/admin/payment-methods'
     | '/admin/products'
     | '/admin/settings'
     | '/admin/'
     | '/api/admin/upload'
+    | '/api/ig/webhook'
     | '/api/admin/file/$'
     | '/api/public/img/$'
     | '/api/public/telegram/webhook'
@@ -187,6 +211,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   LoginRoute: typeof LoginRoute
   ApiAdminUploadRoute: typeof ApiAdminUploadRoute
+  ApiIgWebhookRoute: typeof ApiIgWebhookRoute
   ApiAdminFileSplatRoute: typeof ApiAdminFileSplatRoute
   ApiPublicImgSplatRoute: typeof ApiPublicImgSplatRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
@@ -250,12 +275,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminOrdersRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/instagram': {
+      id: '/admin/instagram'
+      path: '/instagram'
+      fullPath: '/admin/instagram'
+      preLoaderRoute: typeof AdminInstagramRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/categories': {
       id: '/admin/categories'
       path: '/categories'
       fullPath: '/admin/categories'
       preLoaderRoute: typeof AdminCategoriesRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/api/ig/webhook': {
+      id: '/api/ig/webhook'
+      path: '/api/ig/webhook'
+      fullPath: '/api/ig/webhook'
+      preLoaderRoute: typeof ApiIgWebhookRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/admin/upload': {
       id: '/api/admin/upload'
@@ -290,6 +329,7 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteChildren {
   AdminCategoriesRoute: typeof AdminCategoriesRoute
+  AdminInstagramRoute: typeof AdminInstagramRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
   AdminPaymentMethodsRoute: typeof AdminPaymentMethodsRoute
   AdminProductsRoute: typeof AdminProductsRoute
@@ -299,6 +339,7 @@ interface AdminRouteChildren {
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminCategoriesRoute: AdminCategoriesRoute,
+  AdminInstagramRoute: AdminInstagramRoute,
   AdminOrdersRoute: AdminOrdersRoute,
   AdminPaymentMethodsRoute: AdminPaymentMethodsRoute,
   AdminProductsRoute: AdminProductsRoute,
@@ -313,6 +354,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   LoginRoute: LoginRoute,
   ApiAdminUploadRoute: ApiAdminUploadRoute,
+  ApiIgWebhookRoute: ApiIgWebhookRoute,
   ApiAdminFileSplatRoute: ApiAdminFileSplatRoute,
   ApiPublicImgSplatRoute: ApiPublicImgSplatRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
