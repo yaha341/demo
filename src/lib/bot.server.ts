@@ -172,7 +172,7 @@ async function sendProductCard(chat_id: number, p: any, userCountryCode: string 
     }
   }
 
-  const caption = `📦 *${escapeMd(p.name as string)}*\n\n${escapeMd((p.description as string) || "")}\n\n💰 *${displayPrice} ${displayCurrency}*`;
+  const caption = `📦 <b>${escapeHtml(p.name as string)}</b>\n\n${escapeHtml((p.description as string) || "")}\n\n💰 <b>${displayPrice} ${displayCurrency}</b>`;
   const reply_markup = {
     inline_keyboard: [
       [{ text: "➕ В корзину", callback_data: `add:${p.id}` }]
@@ -180,14 +180,14 @@ async function sendProductCard(chat_id: number, p: any, userCountryCode: string 
   };
 
   if (imgs.length === 0) {
-    await tg("sendMessage", { chat_id, text: caption, parse_mode: "Markdown", reply_markup });
+    await tg("sendMessage", { chat_id, text: caption, parse_mode: "HTML", reply_markup });
   } else {
     // Send single photo with button
     await tg("sendPhoto", {
       chat_id,
       photo: imageUrl(imgs[0].image_path),
       caption,
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
       reply_markup,
     });
   }
@@ -212,8 +212,14 @@ async function showProduct(chat_id: number, product_id: string, userCountryCode?
   }
   await sendProductCard(chat_id, p, userCountryCode, s, targetCurrency);
 }
-function escapeMd(t: string): string {
-  return t.replace(/([_*[\]()~`>#+\-=|{}.!])/g, "\\$1");
+function escapeHtml(t: string): string {
+  if (!t) return "";
+  return t
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 async function addToCart(telegram_id: number, product_id: string) {
@@ -254,7 +260,7 @@ async function showCart(chat_id: number, user: BotUser) {
     if (m) currency = m.currency;
   }
 
-  let text = "🛒 *Ваша корзина:*\n\n";
+  let text = "🛒 <b>Ваша корзина:</b>\n\n";
   const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
   for (const it of items as any[]) {
     const p = it.products;
@@ -271,12 +277,12 @@ async function showCart(chat_id: number, user: BotUser) {
     
     const line = Number(displayPrice) * Number(it.quantity);
     total += line;
-    text += `• ${p.name} × ${it.quantity} — ${line} ${currency}\n`;
+    text += `• ${escapeHtml(p.name)} × ${it.quantity} — ${line} ${currency}\n`;
     buttons.push([
       { text: `❌ Убрать «${p.name}»`, callback_data: `rem:${it.id}` },
     ]);
   }
-  text += `\n*Итого: ${total} ${currency}*`;
+  text += `\n<b>Итого: ${total} ${currency}</b>`;
   buttons.push([
     { text: "💳 Оформить заказ", callback_data: "checkout" },
     { text: "🗑 Очистить", callback_data: "clear" },
@@ -284,7 +290,7 @@ async function showCart(chat_id: number, user: BotUser) {
   await tg("sendMessage", {
     chat_id,
     text,
-    parse_mode: "Markdown",
+    parse_mode: "HTML",
     reply_markup: { inline_keyboard: buttons },
   });
 }
@@ -465,15 +471,15 @@ async function notifyAdminNewOrder(orderId: number, proofFileId: string | null) 
     .map((i) => `• ${i.name_snapshot} × ${i.quantity} — ${i.price_snapshot} ${order.currency}`)
     .join("\n");
 
-  const text = `🆕 *Новый заказ #${order.id}*
+  const text = `🆕 <b>Новый заказ #${order.id}</b>
 
-👤 ${escapeMd(order.display_name as string)}${order.username ? ` (@${escapeMd(order.username)})` : ""}
-📞 ${escapeMd((order.contact as string) || "—")}
-🌍 ${escapeMd((order.country_name as string) || "—")}
+👤 ${escapeHtml(order.display_name as string)}${order.username ? ` (@${escapeHtml(order.username)})` : ""}
+📞 ${escapeHtml((order.contact as string) || "—")}
+🌍 ${escapeHtml((order.country_name as string) || "—")}
 
-${escapeMd(itemsText)}
+${escapeHtml(itemsText)}
 
-💰 *Итого: ${order.total} ${order.currency}*`;
+💰 <b>Итого: ${order.total} ${order.currency}</b>`;
 
   const reply_markup = {
     inline_keyboard: [
@@ -489,11 +495,11 @@ ${escapeMd(itemsText)}
       chat_id: adminChatId,
       photo: proofFileId,
       caption: text,
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
       reply_markup,
     });
   } else {
-    await tg("sendMessage", { chat_id: adminChatId, text, parse_mode: "Markdown", reply_markup });
+    await tg("sendMessage", { chat_id: adminChatId, text, parse_mode: "HTML", reply_markup });
   }
 }
 
