@@ -90,25 +90,65 @@ export async function deliverOrder(orderId: number) {
       });
       continue;
     }
-    const { data: dl, error: dlErr } = await supabaseAdmin.storage
+    
+    // Create signed download URL valid for ~10 years
+    const { data: signed, error: signErr } = await supabaseAdmin.storage
       .from("product-files")
-      .download(path);
-    if (dlErr || !dl) {
+      .createSignedUrl(path, 60 * 60 * 24 * 365 * 10, {
+        download: item.file_name_snapshot || "file.bin"
+      });
+      
+    if (signErr || !signed) {
       await tg("sendMessage", {
         chat_id: order.telegram_id,
         text: `⚠️ Не удалось получить файл «${item.name_snapshot}». Продавец вышлет вручную.`,
       });
       continue;
     }
-    const bytes = new Uint8Array(await dl.arrayBuffer());
-    const filename = item.file_name_snapshot || "file.bin";
-    const mime = dl.type || "application/octet-stream";
-    for (let i = 0; i < (item.quantity || 1); i++) {
-      await tgSendMultipart(
-        "sendDocument",
-        { chat_id: order.telegram_id, caption: item.name_snapshot },
-        { field: "document", filename, bytes, contentType: mime },
-      );
+
+    let fileSize = 0;
+    try {
+      const headRes = await fetch(signed.signedUrl, { method: "HEAD" });
+      fileSize = Number(headRes.headers.get("content-length")) || 0;
+    } catch(e) {}
+
+    let sentAsFile = false;
+    
+    // Only attempt to send via Telegram if it's less than 15MB to avoid Vercel timeouts
+    if (fileSize > 0 && fileSize < 15 * 1024 * 1024) {
+      try {
+        const { data: dl, error: dlErr } = await supabaseAdmin.storage
+          .from("product-files")
+          .download(path);
+          
+        if (!dlErr && dl) {
+          const bytes = new Uint8Array(await dl.arrayBuffer());
+          const filename = item.file_name_snapshot || "file.bin";
+          const mime = dl.type || "application/octet-stream";
+          
+          for (let i = 0; i < (item.quantity || 1); i++) {
+            await tgSendMultipart(
+              "sendDocument",
+              { chat_id: order.telegram_id, caption: item.name_snapshot },
+              { field: "document", filename, bytes, contentType: mime },
+            );
+          }
+          sentAsFile = true;
+        }
+      } catch (e) {
+        // Fallback to sending link if Telegram upload fails (e.g., fetch failed)
+        console.error("Failed to upload file to Telegram", e);
+      }
+    }
+    
+    if (!sentAsFile) {
+      for (let i = 0; i < (item.quantity || 1); i++) {
+        await tg("sendMessage", {
+          chat_id: order.telegram_id,
+          text: `📁 <b>${item.name_snapshot}</b>\n\n📥 <a href="${signed.signedUrl}">Нажмите здесь, чтобы скачать файл</a>\n<i>(Ссылка для скачивания)</i>`,
+          parse_mode: "HTML"
+        });
+      }
     }
   }
 
