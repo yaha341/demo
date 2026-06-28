@@ -13,6 +13,13 @@ import {
 } from "@/lib/products.functions";
 import { listPaymentMethods } from "@/lib/payment-methods.functions";
 
+function getCategoryPath(id: string, all: any[]): string {
+  const c = all.find((x) => x.id === id);
+  if (!c) return "";
+  if (!c.parent_id) return c.name;
+  return getCategoryPath(c.parent_id, all) + " → " + c.name;
+}
+
 export const Route = createFileRoute("/admin/products")({
   component: ProductsPage,
 });
@@ -208,7 +215,7 @@ function ProductsPage() {
                         }
                       }}
                     />
-                    {c.name}
+                    {getCategoryPath(c.id, cats.data ?? [])}
                   </label>
                 ))}
                 {(!cats.data || cats.data.length === 0) && (
@@ -367,7 +374,7 @@ function ProductsPage() {
                 <div className="text-xs text-muted-foreground">
                   {p.category_ids && p.category_ids.length > 0
                     ? p.category_ids
-                        .map((id: string) => cats.data?.find((c: any) => c.id === id)?.name)
+                        .map((id: string) => getCategoryPath(id, cats.data ?? []))
                         .filter(Boolean)
                         .join(", ") || "без категории"
                     : p.categories?.name || "без категории"} · {p.price} {p.currency}

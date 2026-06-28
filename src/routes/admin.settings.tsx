@@ -15,14 +15,17 @@ function SettingsPage() {
   const qc = useQueryClient();
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => getSettings() });
   const [adminChatId, setAdminChatId] = useState("");
+  const [adminContactLink, setAdminContactLink] = useState("");
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     setAdminChatId(settings.data?.admin_chat_id ?? "");
+    setAdminContactLink(settings.data?.admin_contact_link ?? "");
   }, [settings.data]);
 
   async function onSave() {
     await saveSetting({ data: { key: "admin_chat_id", value: adminChatId.trim() } });
+    await saveSetting({ data: { key: "admin_contact_link", value: adminContactLink.trim() } });
     qc.invalidateQueries({ queryKey: ["settings"] });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -65,7 +68,18 @@ function SettingsPage() {
             приходить именно туда.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="space-y-2 pt-2 border-t border-border/50">
+          <Label>Ваш контакт для связи (кнопка в боте)</Label>
+          <Input
+            value={adminContactLink}
+            onChange={(e) => setAdminContactLink(e.target.value)}
+            placeholder="например, @my_username или ссылка на WhatsApp"
+          />
+          <p className="text-xs text-muted-foreground">
+            Эта ссылка или текст будет показываться пользователям при нажатии на кнопку «💬 Связаться с автором».
+          </p>
+        </div>
+        <div className="flex items-center gap-2 pt-2">
           <Button onClick={onSave}>Сохранить</Button>
           {saved && <span className="text-sm text-green-600">Сохранено ✓</span>}
         </div>

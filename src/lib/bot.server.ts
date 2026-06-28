@@ -70,6 +70,7 @@ function mainMenu() {
     keyboard: [
       [{ text: "📚 Каталог" }, { text: "🔍 Поиск" }],
       [{ text: "🛒 Корзина" }, { text: "📋 Мои заказы" }],
+      [{ text: "💬 Связаться с автором" }],
     ],
     resize_keyboard: true,
   };
@@ -79,18 +80,18 @@ async function sendMain(chat_id: number, text = "Выберите раздел:"
   await tg("sendMessage", { chat_id, text, reply_markup: mainMenu() });
 }
 
-async function showCategories(chat_id: number, parentId: string | null, userCountryCode?: string) {
+async function showCategories(chat_id: number, parentId: string | null, userCountryCode?: string, offset = 0) {
   const s = await db();
   const q = s.from("categories").select("id, name").order("sort_order").order("name");
   const { data: cats } = parentId ? await q.eq("parent_id", parentId) : await q.is("parent_id", null);
   const productsQuery = s
     .from("products")
-    .select("id, name, price, currency, country_prices")
+    .select("*, product_images(image_path, sort_order)")
     .eq("is_active", true)
     .order("sort_order")
     .order("name");
   const { data: products } = parentId
-    ? await productsQuery.contains("category_ids", [parentId])
+    ? await productsQuery.contains("category_ids", JSON.stringify([parentId]))
     : await productsQuery.eq("category_ids", "[]");
 
   let targetCurrency = "KZT";
@@ -99,50 +100,97 @@ async function showCategories(chat_id: number, parentId: string | null, userCoun
     if (m) targetCurrency = m.currency;
   }
 
-  const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
-  for (const c of cats ?? []) {
-    buttons.push([{ text: `📁 ${c.name as string}`, callback_data: `cat:${c.id}` }]);
-  }
-  for (const p of products ?? []) {
-    let displayPrice = p.price;
-    let displayCurrency = p.currency;
-    
-    if (userCountryCode) {
-      displayCurrency = targetCurrency;
-      const cp = p.country_prices ? (p.country_prices as Record<string, number>)[userCountryCode] : null;
-      if (cp) {
-        displayPrice = cp;
-      } else {
-        displayPrice = await convertAmount(p.price, p.currency, targetCurrency);
-      }
+  if (offset === 0 && cats && cats.length > 0) {
+    const catButtons: Array<Array<{ text: string; callback_data: string }>> = [];
+    for (const c of cats) {
+      catButtons.push([{ text: `📁 ${c.name as string}`, callback_data: `cat:${c.id}:0` }]);
     }
+    if (parentId) {
+      const { data: cur } = await s.from("categories").select("parent_id").eq("id", parentId).single();
+      const back = cur?.parent_id ? `cat:${cur.parent_id}:0` : "cat:root:0";
+      catButtons.push([{ text: "« Назад", callback_data: back }]);
+    }
+    await tg("sendMessage", {
+      chat_id,
+      text: parentId ? "📁 Подкатегории:" : "📚 Каталог:",
+      reply_markup: { inline_keyboard: catButtons },
+    });
+  }
 
-    buttons.push([
-      {
-        text: `📦 ${p.name as string} — ${displayPrice} ${displayCurrency}`,
-        callback_data: `prod:${p.id}`,
-      },
-    ]);
-  }
-  if (parentId) {
-    // find parent's parent for back nav
-    const { data: cur } = await s
-      .from("categories")
-      .select("parent_id")
-      .eq("id", parentId)
-      .single();
-    const back = cur?.parent_id ? `cat:${cur.parent_id as string}` : "cat:root";
-    buttons.push([{ text: "« Назад", callback_data: back }]);
-  }
-  if (!buttons.length) {
-    await tg("sendMessage", { chat_id, text: "📂 Здесь пока пусто." });
+  const allProds = products ?? [];
+  const page = allProds.slice(offset, offset + 5);
+
+  if (allProds.length === 0 && (!cats || cats.length === 0)) {
+    if (offset === 0) {
+      const navButtons = [];
+      if (parentId) {
+        const { data: cur } = await s.from("categories").select("parent_id").eq("id", parentId).single();
+        const back = cur?.parent_id ? `cat:${cur.parent_id}:0` : "cat:root:0";
+        navButtons.push([{ text: "« Назад", callback_data: back }]);
+      }
+      await tg("sendMessage", { chat_id, text: "📂 Здесь пока пусто.", reply_markup: navButtons.length ? { inline_keyboard: navButtons } : undefined });
+    }
     return;
   }
-  await tg("sendMessage", {
-    chat_id,
-    text: parentId ? "📁 Подкатегории и товары:" : "📚 Каталог:",
-    reply_markup: { inline_keyboard: buttons },
-  });
+
+  for (const p of page) {
+    await sendProductCard(chat_id, p, userCountryCode, s, targetCurrency);
+  }
+
+  const navButtons = [];
+  if (offset + 5 < allProds.length) {
+    navButtons.push([{ text: "⬇️ Показать ещё", callback_data: parentId ? `cat:${parentId}:${offset + 5}` : `cat:root:${offset + 5}` }]);
+  }
+  
+  // Show back button at the end of products if we didn't show categories
+  if (parentId && (!cats || cats.length === 0 || offset > 0)) {
+    const { data: cur } = await s.from("categories").select("parent_id").eq("id", parentId).single();
+    const back = cur?.parent_id ? `cat:${cur.parent_id}:0` : "cat:root:0";
+    navButtons.push([{ text: "« Назад в категории", callback_data: back }]);
+  }
+
+  if (navButtons.length > 0) {
+    await tg("sendMessage", { chat_id, text: "Навигация:", reply_markup: { inline_keyboard: navButtons } });
+  }
+}
+
+async function sendProductCard(chat_id: number, p: any, userCountryCode: string | undefined, s: any, targetCurrency: string) {
+  const imgs = (p.product_images || [])
+    .slice()
+    .sort((a: any, b: any) => a.sort_order - b.sort_order);
+
+  let displayPrice = p.price;
+  let displayCurrency = p.currency;
+  
+  if (userCountryCode) {
+    displayCurrency = targetCurrency;
+    const cp = p.country_prices ? (p.country_prices as Record<string, number>)[userCountryCode] : null;
+    if (cp) {
+      displayPrice = cp;
+    } else {
+      displayPrice = await convertAmount(p.price, p.currency, targetCurrency);
+    }
+  }
+
+  const caption = `📦 *${escapeMd(p.name as string)}*\n\n${escapeMd((p.description as string) || "")}\n\n💰 *${displayPrice} ${displayCurrency}*`;
+  const reply_markup = {
+    inline_keyboard: [
+      [{ text: "➕ В корзину", callback_data: `add:${p.id}` }]
+    ],
+  };
+
+  if (imgs.length === 0) {
+    await tg("sendMessage", { chat_id, text: caption, parse_mode: "Markdown", reply_markup });
+  } else {
+    // Send single photo with button
+    await tg("sendPhoto", {
+      chat_id,
+      photo: imageUrl(imgs[0].image_path),
+      caption,
+      parse_mode: "Markdown",
+      reply_markup,
+    });
+  }
 }
 
 async function showProduct(chat_id: number, product_id: string, userCountryCode?: string) {
@@ -157,62 +205,13 @@ async function showProduct(chat_id: number, product_id: string, userCountryCode?
     await tg("sendMessage", { chat_id, text: "Товар не найден." });
     return;
   }
-  const imgs = ((p as any).product_images as Array<{ image_path: string; sort_order: number }>)
-    .slice()
-    .sort((a, b) => a.sort_order - b.sort_order);
-
-  let displayPrice = p.price;
-  let displayCurrency = p.currency;
+  let targetCurrency = "KZT";
   if (userCountryCode) {
     const { data: m } = await s.from("payment_methods").select("currency").eq("country_code", userCountryCode).maybeSingle();
-    if (m) displayCurrency = m.currency;
-    
-    const cp = p.country_prices ? (p.country_prices as Record<string, number>)[userCountryCode] : null;
-    if (cp) {
-      displayPrice = cp;
-    } else {
-      displayPrice = await convertAmount(p.price, p.currency, displayCurrency);
-    }
+    if (m) targetCurrency = m.currency;
   }
-
-  const caption = `📦 *${escapeMd(p.name as string)}*\n\n${escapeMd((p.description as string) || "")}\n\n💰 *${displayPrice} ${displayCurrency}*`;
-
-  if (imgs.length === 0) {
-    await tg("sendMessage", {
-      chat_id,
-      text: caption,
-      parse_mode: "Markdown",
-    });
-  } else if (imgs.length === 1) {
-    await tg("sendPhoto", {
-      chat_id,
-      photo: imageUrl(imgs[0].image_path),
-      caption,
-      parse_mode: "Markdown",
-    });
-  } else {
-    await tg("sendMediaGroup", {
-      chat_id,
-      media: imgs.slice(0, 10).map((im, i) => ({
-        type: "photo",
-        media: imageUrl(im.image_path),
-        ...(i === 0 ? { caption, parse_mode: "Markdown" } : {}),
-      })),
-    });
-  }
-
-  await tg("sendMessage", {
-    chat_id,
-    text: "Что дальше?",
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "➕ В корзину", callback_data: `add:${p.id}` }],
-        [{ text: "« К каталогу", callback_data: p.category_id ? `cat:${p.category_id}` : "cat:root" }],
-      ],
-    },
-  });
+  await sendProductCard(chat_id, p, userCountryCode, s, targetCurrency);
 }
-
 function escapeMd(t: string): string {
   return t.replace(/([_*[\]()~`>#+\-=|{}.!])/g, "\\$1");
 }
@@ -438,8 +437,8 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
 
   await tg("sendMessage", {
     chat_id,
-    text: `🧾 *Заказ #${order.id}* создан.\n\nСумма к оплате: *${total} ${currency}*\n\n${escapeMd(method!.instructions as string)}\n\nПосле оплаты *пришлите скриншот* (фото) в этот чат — продавец проверит и пришлёт файлы.`,
-    parse_mode: "Markdown",
+    text: `🧾 <b>Заказ #${order.id}</b> создан.\n\nСумма к оплате: <b>${total} ${currency}</b>\n\n${method!.instructions}\n\nПосле оплаты <b>пришлите скриншот</b> (фото) в этот чат — продавец проверит и пришлёт файлы.`,
+    parse_mode: "HTML",
   });
 }
 
@@ -591,8 +590,14 @@ export async function handleUpdate(update: any) {
         }
       }
 
-      if (data === "cat:root") return showCategories(chat_id, null, user.state?.country_code);
-      if (data.startsWith("cat:")) return showCategories(chat_id, data.slice(4), user.state?.country_code);
+      if (data.startsWith("cat:root")) {
+        const parts = data.split(":");
+        return showCategories(chat_id, null, user.state?.country_code, Number(parts[2] || 0));
+      }
+      if (data.startsWith("cat:")) {
+        const parts = data.split(":");
+        return showCategories(chat_id, parts[1], user.state?.country_code, Number(parts[2] || 0));
+      }
       if (data.startsWith("prod:")) return showProduct(chat_id, data.slice(5), user.state?.country_code);
       if (data.startsWith("add:")) {
         await addToCart(from_id, data.slice(4));
@@ -763,6 +768,24 @@ export async function handleUpdate(update: any) {
         return showCart(chat_id, user);
       case "📋 Мои заказы":
         return showMyOrders(chat_id, from.id);
+      case "💬 Связаться с автором": {
+        const s = await db();
+        const { data: setting } = await s
+          .from("app_settings")
+          .select("value")
+          .eq("key", "admin_contact_link")
+          .maybeSingle();
+        if (setting?.value) {
+          await tg("sendMessage", {
+            chat_id,
+            text: `Для связи с автором используйте следующие контакты:\n${setting.value}`,
+            disable_web_page_preview: true,
+          });
+        } else {
+          await tg("sendMessage", { chat_id, text: "Контакты автора пока не указаны." });
+        }
+        return;
+      }
     }
 
     // Fallback
