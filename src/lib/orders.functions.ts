@@ -76,79 +76,52 @@ export async function deliverOrder(orderId: number) {
     text: `✅ Оплата подтверждена! Заказ #${order.id}.\nОтправляю ваши материалы...`,
   });
 
-  for (const item of order.order_items as Array<{
+  const items = order.order_items as Array<{
     name_snapshot: string;
     file_path_snapshot: string | null;
     file_name_snapshot: string | null;
+    file_path_kz_snapshot?: string | null;
+    file_name_kz_snapshot?: string | null;
     quantity: number;
-  }>) {
-    const path = item.file_path_snapshot;
-    if (!path) {
+  }>;
+
+  for (let idx = 0; idx < items.length; idx++) {
+    const item = items[idx];
+    const path_ru = item.file_path_snapshot;
+    const path_kz = (item as any).file_path_kz_snapshot;
+
+    if (!path_ru) {
       await tg("sendMessage", {
         chat_id: order.telegram_id,
         text: `⚠️ Файл для «${item.name_snapshot}» не настроен. Продавец вышлет вручную.`,
       });
       continue;
     }
-    
-    // Create signed download URL valid for ~10 years
-    const { data: signed, error: signErr } = await supabaseAdmin.storage
-      .from("product-files")
-      .createSignedUrl(path, 60 * 60 * 24 * 365 * 10, {
-        download: item.file_name_snapshot || "file.bin"
-      });
-      
-    if (signErr || !signed) {
+
+    if (path_kz) {
+      // Prompt for language
       await tg("sendMessage", {
         chat_id: order.telegram_id,
-        text: `⚠️ Не удалось получить файл «${item.name_snapshot}». Продавец вышлет вручную.`,
+        text: `📚 Материал «<b>${item.name_snapshot}</b>»\nВыберите язык, на котором хотите получить файл:`,
+        parse_mode: "HTML",
+        reply_markup: JSON.stringify({
+          inline_keyboard: [
+            [
+              { text: "🇷🇺 Русский", callback_data: `lang_ru:${orderId}:${idx}` },
+              { text: "🇰🇿 Қазақша", callback_data: `lang_kz:${orderId}:${idx}` }
+            ]
+          ]
+        })
       });
-      continue;
-    }
-
-    let fileSize = 0;
-    try {
-      const headRes = await fetch(signed.signedUrl, { method: "HEAD" });
-      fileSize = Number(headRes.headers.get("content-length")) || 0;
-    } catch(e) {}
-
-    let sentAsFile = false;
-    
-    // Only attempt to send via Telegram if it's less than 15MB to avoid Vercel timeouts
-    if (fileSize > 0 && fileSize < 15 * 1024 * 1024) {
-      try {
-        const { data: dl, error: dlErr } = await supabaseAdmin.storage
-          .from("product-files")
-          .download(path);
-          
-        if (!dlErr && dl) {
-          const bytes = new Uint8Array(await dl.arrayBuffer());
-          const filename = item.file_name_snapshot || "file.bin";
-          const mime = dl.type || "application/octet-stream";
-          
-          for (let i = 0; i < (item.quantity || 1); i++) {
-            await tgSendMultipart(
-              "sendDocument",
-              { chat_id: order.telegram_id, caption: item.name_snapshot },
-              { field: "document", filename, bytes, contentType: mime },
-            );
-          }
-          sentAsFile = true;
-        }
-      } catch (e) {
-        // Fallback to sending link if Telegram upload fails (e.g., fetch failed)
-        console.error("Failed to upload file to Telegram", e);
-      }
-    }
-    
-    if (!sentAsFile) {
-      for (let i = 0; i < (item.quantity || 1); i++) {
-        await tg("sendMessage", {
-          chat_id: order.telegram_id,
-          text: `📁 <b>${item.name_snapshot}</b>\n\n📥 <a href="${signed.signedUrl}">Нажмите здесь, чтобы скачать файл</a>\n<i>(Ссылка для скачивания)</i>`,
-          parse_mode: "HTML"
-        });
-      }
+    } else {
+      // Send directly
+      await sendFileToUser(
+        order.telegram_id,
+        path_ru,
+        item.file_name_snapshot || "file.bin",
+        item.name_snapshot,
+        item.quantity || 1
+      );
     }
   }
 
@@ -176,3 +149,63 @@ export const getScreenshotUrl = createServerFn({ method: "GET" })
       .createSignedUrl(path, 60 * 60);
     return data?.signedUrl || null;
   });
+
+export async function sendFileToUser(chat_id: number, path: string, downloadName: string, caption: string, quantity: number) {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const { data: signed, error: signErr } = await supabaseAdmin.storage
+    .from("product-files")
+    .createSignedUrl(path, 60 * 60 * 24 * 365 * 10, {
+      download: downloadName || "file.bin"
+    });
+    
+  if (signErr || !signed) {
+    await tg("sendMessage", {
+      chat_id,
+      text: `⚠️ Не удалось получить файл «${caption}». Продавец вышлет вручную.`,
+    });
+    return;
+  }
+
+  let fileSize = 0;
+  try {
+    const headRes = await fetch(signed.signedUrl, { method: "HEAD" });
+    fileSize = Number(headRes.headers.get("content-length")) || 0;
+  } catch(e) {}
+
+  let sentAsFile = false;
+  
+  if (fileSize > 0 && fileSize < 15 * 1024 * 1024) {
+    try {
+      const { data: dl, error: dlErr } = await supabaseAdmin.storage
+        .from("product-files")
+        .download(path);
+        
+      if (!dlErr && dl) {
+        const bytes = new Uint8Array(await dl.arrayBuffer());
+        const filename = downloadName || "file.bin";
+        const mime = dl.type || "application/octet-stream";
+        
+        for (let i = 0; i < (quantity || 1); i++) {
+          await tgSendMultipart(
+            "sendDocument",
+            { chat_id, caption },
+            { field: "document", filename, bytes, contentType: mime },
+          );
+        }
+        sentAsFile = true;
+      }
+    } catch (e) {
+      console.error("Failed to upload file to Telegram", e);
+    }
+  }
+  
+  if (!sentAsFile) {
+    for (let i = 0; i < (quantity || 1); i++) {
+      await tg("sendMessage", {
+        chat_id,
+        text: `📁 <b>${caption}</b>\n\n📥 <a href="${signed.signedUrl}">Нажмите здесь, чтобы скачать файл</a>\n<i>(Ссылка для скачивания)</i>`,
+        parse_mode: "HTML"
+      });
+    }
+  }
+}

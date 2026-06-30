@@ -368,7 +368,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
     .single();
   const { data: items } = await s
     .from("cart_items")
-    .select("id, quantity, products(id, name, price, currency, file_path, file_name, country_prices)")
+    .select("id, quantity, products(id, name, price, currency, file_path, file_name, file_path_kz, file_name_kz, country_prices)")
     .eq("telegram_id", telegram_id);
   if (!items?.length) {
     await tg("sendMessage", { chat_id, text: "🛒 Корзина пуста." });
@@ -434,6 +434,8 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
         quantity: it.quantity,
         file_path_snapshot: it.products?.file_path ?? null,
         file_name_snapshot: it.products?.file_name ?? null,
+        file_path_kz_snapshot: it.products?.file_path_kz ?? null,
+        file_name_kz_snapshot: it.products?.file_name_kz ?? null,
       };
     }),
   );
@@ -590,7 +592,7 @@ export async function handleUpdate(update: any) {
       const user = await upsertUser(cq.from as any);
       
       // Before allowing navigation, require country code
-      if (!data.startsWith("setcountry:") && !data.startsWith("confirm:") && !data.startsWith("reject:") && data !== "clear" && !data.startsWith("rem:") && !data.startsWith("add:")) {
+      if (!data.startsWith("setcountry:") && !data.startsWith("confirm:") && !data.startsWith("reject:") && data !== "clear" && !data.startsWith("rem:") && !data.startsWith("add:") && !data.startsWith("lang_ru:") && !data.startsWith("lang_kz:")) {
         if (!user.state?.country_code) {
           await askCountry(chat_id, from_id);
           return;
@@ -632,6 +634,34 @@ export async function handleUpdate(update: any) {
         await setState(from_id, { ...user.state, country_code: code, country_name: m?.country_name });
         await tg("sendMessage", { chat_id, text: `✅ Ваша страна сохранена: ${m?.country_name}\nТеперь вы видите корректные цены!` });
         await sendMain(chat_id);
+        return;
+      }
+
+      if (data.startsWith("lang_ru:") || data.startsWith("lang_kz:")) {
+        const parts = data.split(":");
+        const lang = parts[0] === "lang_ru" ? "ru" : "kz";
+        const orderId = Number(parts[1]);
+        const idx = Number(parts[2]);
+        const s = await db();
+        const { data: order } = await s.from("orders").select("*, order_items(*)").eq("id", orderId).single();
+        if (!order) return;
+        const items = order.order_items as any[];
+        const item = items[idx];
+        if (!item) return;
+
+        const { sendFileToUser } = await import("./orders.functions");
+        const path = lang === "ru" ? item.file_path_snapshot : item.file_path_kz_snapshot;
+        const name = lang === "ru" ? item.file_name_snapshot : item.file_name_kz_snapshot;
+
+        await tg("sendMessage", { chat_id, text: `⏳ Загружаю файл (${lang === "ru" ? "Русский" : "Қазақша"})...` });
+        
+        await sendFileToUser(
+          order.telegram_id,
+          path,
+          name || "file.bin",
+          item.name_snapshot,
+          item.quantity || 1
+        );
         return;
       }
 

@@ -57,6 +57,8 @@ const SaveInput = z.object({
   sort_order: z.number().int().default(0),
   file_path: z.string().nullable().optional(),
   file_name: z.string().nullable().optional(),
+  file_path_kz: z.string().nullable().optional(),
+  file_name_kz: z.string().nullable().optional(),
   image_paths: z.array(z.string()).default([]),
   country_prices: z.record(z.number()).optional().default({}),
 });
@@ -82,6 +84,8 @@ export const saveProduct = createServerFn({ method: "POST" })
           sort_order: data.sort_order,
           file_path: data.file_path ?? null,
           file_name: data.file_name ?? null,
+          file_path_kz: data.file_path_kz ?? null,
+          file_name_kz: data.file_name_kz ?? null,
           country_prices: data.country_prices,
         })
         .eq("id", productId);
@@ -101,6 +105,8 @@ export const saveProduct = createServerFn({ method: "POST" })
           sort_order: data.sort_order,
           file_path: data.file_path ?? null,
           file_name: data.file_name ?? null,
+          file_path_kz: data.file_path_kz ?? null,
+          file_name_kz: data.file_name_kz ?? null,
           country_prices: data.country_prices,
         })
         .select("id")

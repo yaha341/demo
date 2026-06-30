@@ -39,6 +39,8 @@ type Product = {
   sort_order: number;
   file_path: string | null;
   file_name: string | null;
+  file_path_kz?: string | null;
+  file_name_kz?: string | null;
   product_images?: Img[];
   country_prices?: Record<string, number>;
 };
@@ -55,6 +57,8 @@ const empty: Product = {
   sort_order: 0,
   file_path: null,
   file_name: null,
+  file_path_kz: null,
+  file_name_kz: null,
   product_images: [],
   country_prices: {},
 };
@@ -106,9 +110,11 @@ function ProductsPage() {
       price: Number(p.price),
       currency: p.currency,
       is_active: p.is_active,
-      sort_order: p.sort_order ?? 0,
+      sort_order: p.sort_order,
       file_path: p.file_path,
       file_name: p.file_name,
+      file_path_kz: p.file_path_kz,
+      file_name_kz: p.file_name_kz,
       country_prices: p.country_prices || {},
     });
     const imgs = (p.product_images ?? []).slice().sort((a: Img, b: Img) => a.sort_order - b.sort_order);
@@ -139,6 +145,16 @@ function ProductsPage() {
     }
   }
 
+  async function onFileChangeKz(file: File | null) {
+    if (!file || !editing) return;
+    try {
+      const r = await uploadFile(file, "product-files");
+      setEditing({ ...editing, file_path_kz: r.path, file_name_kz: r.name });
+    } catch (e: any) {
+      alert("Ошибка загрузки файла (KZ): " + e.message);
+    }
+  }
+
   async function onSave() {
     if (!editing) return;
     setSaving(true);
@@ -157,6 +173,8 @@ function ProductsPage() {
           sort_order: Number(editing.sort_order),
           file_path: editing.file_path,
           file_name: editing.file_name,
+          file_path_kz: editing.file_path_kz,
+          file_name_kz: editing.file_name_kz,
           image_paths: images.map((i) => i.image_path),
           country_prices: editing.country_prices,
         },
@@ -321,11 +339,22 @@ function ProductsPage() {
           )}
 
           <div className="space-y-2 pt-4 border-t">
-            <Label>Файл товара (PDF / архив / любой)</Label>
+            <Label>📄 Файл товара (Русский)</Label>
             <Input type="file" onChange={(e) => onFileChange(e.target.files?.[0] ?? null)} />
             {editing.file_name && (
               <p className="text-sm text-muted-foreground">📎 {editing.file_name}</p>
             )}
+          </div>
+
+          <div className="space-y-2 pt-4 border-t">
+            <Label>📄 Файл товара (Қазақша)</Label>
+            <Input type="file" onChange={(e) => onFileChangeKz(e.target.files?.[0] ?? null)} />
+            {editing.file_name_kz && (
+              <p className="text-sm text-muted-foreground">📎 {editing.file_name_kz}</p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Если загрузить только Русский файл, бот не будет спрашивать язык при выдаче заказа.
+            </p>
           </div>
 
           <label className="flex items-center gap-2 text-sm">
