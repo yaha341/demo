@@ -402,7 +402,10 @@ function ProductsPage() {
                         .filter(Boolean)
                         .join(", ") || "без категории"
                     : p.categories?.name || "без категории"} · {p.price} {p.currency}
-                  {!p.file_path && <span className="text-destructive"> · нет файла</span>}
+                  {!p.file_path && !p.file_path_kz && <span className="text-destructive"> · нет файла</span>}
+                  {p.file_path && p.file_path_kz && <span className="text-green-500"> · 🇷🇺🇰🇿</span>}
+                  {p.file_path && !p.file_path_kz && <span className="text-muted-foreground"> · 🇷🇺</span>}
+                  {!p.file_path && p.file_path_kz && <span className="text-muted-foreground"> · 🇰🇿</span>}
                 </div>
               </div>
               <div className="flex gap-1 shrink-0">
