@@ -7,7 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components-ui/dialog";
-import { confirmOrder, listOrders, rejectOrder } from "@/lib/orders.functions";
+import { confirmOrder, deleteOrder, listOrders, rejectOrder } from "@/lib/orders.functions";
 import { useState } from "react";
 
 // Тип чека определяется по расширению сохранённого пути.
@@ -56,6 +56,19 @@ function OrdersPage() {
     try {
       await rejectOrder({ data: { id, note } });
       qc.invalidateQueries({ queryKey: ["orders"] });
+    } finally {
+      setBusy(null);
+    }
+  }
+  async function onDelete(id: number) {
+    if (!confirm(`Удалить заказ #${id}? Это действие необратимо.`)) return;
+    if (!confirm(`Точно удалить заказ #${id}? Нумерация следующих заказов сбросится до текущего максимума.`)) return;
+    setBusy(id);
+    try {
+      await deleteOrder({ data: { id } });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+    } catch (e: any) {
+      alert(e.message);
     } finally {
       setBusy(null);
     }
@@ -126,6 +139,17 @@ function OrdersPage() {
                   Отправить файлы ещё раз
                 </Button>
               )}
+              <div className="flex justify-end pt-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={() => onDelete(o.id)}
+                  disabled={busy === o.id}
+                >
+                  🗑️ Удалить
+                </Button>
+              </div>
             </div>
           );
         })}

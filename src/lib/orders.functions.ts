@@ -60,6 +60,20 @@ export const rejectOrder = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
+export const deleteOrder = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ id: z.number().int() }).parse(d))
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    const s = await db();
+    // Удаляем order_items, затем сам заказ
+    await s.from("order_items").delete().eq("order_id", data.id);
+    const { error } = await s.from("orders").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    // Сбрасываем sequence чтобы следующий ID = max(id) + 1
+    await s.rpc("reset_orders_sequence");
+    return { ok: true as const };
+  });
+
 // Shared: deliver files to user and mark order delivered. Used by admin panel and bot callback.
 export async function deliverOrder(orderId: number) {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
