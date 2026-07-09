@@ -8,7 +8,7 @@ type BotUser = {
   last_name: string | null;
   language_code: string | null;
   contact_phone: string | null;
-  state: { mode?: string; pending_order_id?: number; country_code?: string; country_name?: string } | null;
+  state: { mode?: string; pending_order_id?: number; country_code?: string; country_name?: string; last_search?: string } | null;
 };
 
 async function db() {
@@ -451,7 +451,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
   });
 }
 
-async function notifyAdminNewOrder(orderId: number, proofFileId: string | null) {
+async function notifyAdminNewOrder(orderId: number, proofFileId: string | null, proofKind: "photo" | "document" | null) {
   const s = await db();
   const { data: setting } = await s
     .from("app_settings")
@@ -469,10 +469,51 @@ async function notifyAdminNewOrder(orderId: number, proofFileId: string | null) 
     .eq("id", orderId)
     .single();
   if (!order) return;
-  const items = ((order as any).order_items as Array<{ name_snapshot: string; price_snapshot: number; quantity: number }>) || [];
+  const items = ((order as any).order_items as Array<{ product_id: string | null; name_snapshot: string; price_snapshot: number; quantity: number }>) || [];
   const itemsText = items
     .map((i) => `• ${i.name_snapshot} × ${i.quantity} — ${i.price_snapshot} ${order.currency}`)
     .join("\n");
+
+  // --- Задача 4: обложки товаров отдельным сообщением (чтобы админ сразу видел, что продаётся) ---
+  const productIds = items.map((i) => i.product_id).filter(Boolean) as string[];
+  if (productIds.length > 0) {
+    const { data: imgs } = await s
+      .from("product_images")
+      .select("product_id, image_path, sort_order")
+      .in("product_id", productIds)
+      .order("sort_order");
+    // Берём первую (по sort_order) обложку для каждого товара, без дублей по product_id
+    const seen = new Set<string>();
+    const coverUrls: string[] = [];
+    for (const im of imgs ?? []) {
+      const pid = im.product_id as string;
+      if (seen.has(pid)) continue;
+      seen.add(pid);
+      coverUrls.push(imageUrl(im.image_path as string));
+    }
+    if (coverUrls.length === 1) {
+      await tg("sendPhoto", {
+        chat_id: adminChatId,
+        photo: coverUrls[0],
+        caption: `📦 <b>Материалы заказа #${order.id}</b>\n\n${escapeHtml(itemsText)}\n\n💰 <b>Итого: ${order.total} ${order.currency}</b>`,
+        parse_mode: "HTML",
+      });
+    } else if (coverUrls.length > 1) {
+      await tg("sendMediaGroup", {
+        chat_id: adminChatId,
+        media: coverUrls.map((u, idx) => ({
+          type: "photo",
+          media: u,
+          ...(idx === 0
+            ? {
+                caption: `📦 <b>Материалы заказа #${order.id}</b>\n\n${escapeHtml(itemsText)}\n\n💰 <b>Итого: ${order.total} ${order.currency}</b>`,
+                parse_mode: "HTML",
+              }
+            : {}),
+        })),
+      });
+    }
+  }
 
   const text = `🆕 <b>Новый заказ #${order.id}</b>
 
@@ -493,7 +534,18 @@ ${escapeHtml(itemsText)}
     ],
   };
 
-  if (proofFileId) {
+  // Чек оплаты. Кнопки подтверждения всегда на сообщении с чеком.
+  if (proofFileId && proofKind === "document") {
+    // Чек прислали документом (PDF / картинка файлом)
+    await tg("sendDocument", {
+      chat_id: adminChatId,
+      document: proofFileId,
+      caption: text,
+      parse_mode: "HTML",
+      reply_markup,
+    });
+  } else if (proofFileId) {
+    // Чек прислали фото
     await tg("sendPhoto", {
       chat_id: adminChatId,
       photo: proofFileId,
@@ -502,54 +554,63 @@ ${escapeHtml(itemsText)}
       reply_markup,
     });
   } else {
-    await tg("sendMessage", { chat_id: adminChatId, text, parse_mode: "HTML", reply_markup });
+    // Чек не сохранился — помечаем, чтобы админ запросил вручную
+    await tg("sendMessage", {
+      chat_id: adminChatId,
+      text: `${text}\n\n⚠️ <b>Чек не удалось получить автоматически</b> — запросите у покупателя.`,
+      parse_mode: "HTML",
+      reply_markup,
+    });
   }
 }
 
-async function showSearch(chat_id: number, user: BotUser, query: string) {
+async function showSearch(chat_id: number, user: BotUser, query: string, offset = 0) {
   const telegram_id = user.telegram_id;
   const s = await db();
   const term = `%${query.replace(/[%_]/g, "")}%`;
   const { data } = await s
     .from("products")
-    .select("id, name, price, currency, country_prices")
+    .select("*, product_images(image_path, sort_order)")
     .eq("is_active", true)
     .or(`name.ilike.${term},description.ilike.${term},keywords.ilike.${term}`)
-    .limit(20);
-  await setState(telegram_id, { ...user.state, mode: "idle" });
+    .order("name")
+    .limit(30);
+
+  // Запоминаем запрос для пагинации (callback_data ограничена 64 байтами,
+  // поэтому сам запрос в payload не кладём, а храним в state).
+  await setState(telegram_id, { ...user.state, mode: "idle", last_search: query });
+
   if (!data?.length) {
     await tg("sendMessage", { chat_id, text: "Ничего не нашлось. Попробуйте другое слово." });
     return;
   }
-  
+
   let targetCurrency = "KZT";
   if (user.state?.country_code) {
     const { data: m } = await s.from("payment_methods").select("currency").eq("country_code", user.state.country_code).maybeSingle();
     if (m) targetCurrency = m.currency;
   }
-  
-  const buttons = [];
-  for (const p of data) {
-    let displayPrice = p.price;
-    let curr = p.currency;
-    
-    if (user.state?.country_code) {
-      curr = targetCurrency;
-      const cp = p.country_prices ? (p.country_prices as Record<string, number>)[user.state.country_code] : null;
-      if (cp) {
-        displayPrice = cp;
-      } else {
-        displayPrice = await convertAmount(p.price, p.currency, targetCurrency);
-      }
-    }
-    buttons.push([{ text: `${p.name} — ${displayPrice} ${curr}`, callback_data: `prod:${p.id}` }]);
+
+  const all = data;
+  const page = all.slice(offset, offset + 5);
+
+  if (offset === 0) {
+    await tg("sendMessage", { chat_id, text: `🔍 Найдено материалов: ${all.length}` });
   }
-  
-  await tg("sendMessage", {
-    chat_id,
-    text: `🔍 Найдено: ${data.length}`,
-    reply_markup: { inline_keyboard: buttons },
-  });
+
+  for (const p of page) {
+    await sendProductCard(chat_id, p, user.state?.country_code, s, targetCurrency);
+  }
+
+  // Кнопка «Показать ещё», если остались результаты
+  const nextOffset = offset + 5;
+  if (nextOffset < all.length) {
+    await tg("sendMessage", {
+      chat_id,
+      text: `Показано ${nextOffset} из ${all.length}`,
+      reply_markup: { inline_keyboard: [[{ text: "⬇️ Показать ещё", callback_data: `searchmore:${nextOffset}` }]] },
+    });
+  }
 }
 
 async function showMyOrders(chat_id: number, telegram_id: number) {
@@ -592,7 +653,7 @@ export async function handleUpdate(update: any) {
       const user = await upsertUser(cq.from as any);
       
       // Before allowing navigation, require country code
-      if (!data.startsWith("setcountry:") && !data.startsWith("confirm:") && !data.startsWith("reject:") && data !== "clear" && !data.startsWith("rem:") && !data.startsWith("add:") && !data.startsWith("lang_ru:") && !data.startsWith("lang_kz:")) {
+      if (!data.startsWith("setcountry:") && !data.startsWith("confirm:") && !data.startsWith("reject:") && data !== "clear" && !data.startsWith("rem:") && !data.startsWith("add:") && !data.startsWith("lang_ru:") && !data.startsWith("lang_kz:") && !data.startsWith("searchmore:") && !data.startsWith("prod:")) {
         if (!user.state?.country_code) {
           await askCountry(chat_id, from_id);
           return;
@@ -608,6 +669,16 @@ export async function handleUpdate(update: any) {
         return showCategories(chat_id, parts[1], user.state?.country_code, Number(parts[2] || 0));
       }
       if (data.startsWith("prod:")) return showProduct(chat_id, data.slice(5), user.state?.country_code);
+      if (data.startsWith("searchmore:")) {
+        // Пагинация поиска: запрос берём из state.last_search
+        const offset = Number(data.slice(11)) || 0;
+        const query = user.state?.last_search;
+        if (!query) {
+          await tg("sendMessage", { chat_id, text: "Сессия поиска устарела. Повторите поиск." });
+          return;
+        }
+        return showSearch(chat_id, user, query, offset);
+      }
       if (data.startsWith("add:")) {
         await addToCart(from_id, data.slice(4));
         await tg("sendMessage", { chat_id, text: "✅ Добавлено в корзину." });
@@ -773,30 +844,84 @@ export async function handleUpdate(update: any) {
       return;
     }
 
-    // Payment proof (photo) while awaiting
-    if (msg.photo && user.state?.mode === "awaiting_proof" && user.state.pending_order_id) {
+    // Payment proof (photo OR document, e.g. PDF) while awaiting
+    if (user.state?.mode === "awaiting_proof" && user.state.pending_order_id) {
       const orderId = user.state.pending_order_id;
-      const biggest = msg.photo[msg.photo.length - 1];
-      const file = await downloadTelegramFile(biggest.file_id);
-      if (file) {
+
+      // Только фото или документ считаются чеком; иначе подсказка
+      if (!msg.photo && !msg.document) {
+        await tg("sendMessage", {
+          chat_id,
+          text: "📨 Пришлите, пожалуйста, чек об оплате — фото или файл (например, PDF).",
+        });
+        return;
+      }
+
+      // Определяем источник чека и расширение сохраняемого файла.
+      // Расширение важно: админ-панель определяет тип чека по расширению пути.
+      let proofFileId: string | null = null;
+      let proofKind: "photo" | "document" | null = null;
+      let dl: { bytes: Uint8Array; mime: string } | null = null;
+      let fileExt = "jpg";
+
+      if (msg.photo) {
+        const biggest = msg.photo[msg.photo.length - 1];
+        proofFileId = biggest.file_id;
+        proofKind = "photo";
+        dl = await downloadTelegramFile(biggest.file_id);
+      } else if (msg.document) {
+        proofFileId = msg.document.file_id;
+        proofKind = "document";
+        dl = await downloadTelegramFile(msg.document.file_id);
+        const docName = (msg.document.file_name || "").toLowerCase();
+        const extMatch = docName.match(/\.([a-z0-9]{1,8})$/);
+        if (extMatch) fileExt = extMatch[1];
+        else if (msg.document.mime_type === "application/pdf") fileExt = "pdf";
+        else fileExt = "bin";
+      }
+
+      // Сохраняем чек в storage и переводим заказ в "awaiting_confirmation".
+      // Даже если скачивание не удалось — переводим заказ, чтобы покупатель не зависал,
+      // и уведомляем админа, что чек нужно запросить вручную.
+      let proofSaved = false;
+      if (dl) {
         const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-        const key = `order-${orderId}/${Date.now()}.jpg`;
-        await supabaseAdmin.storage.from("payment-proofs").upload(key, file.bytes, {
-          contentType: file.mime,
+        const key = `order-${orderId}/${Date.now()}.${fileExt}`;
+        const upRes = await supabaseAdmin.storage.from("payment-proofs").upload(key, dl.bytes, {
+          contentType: dl.mime,
           upsert: true,
         });
+        if (!upRes.error) {
+          await supabaseAdmin
+            .from("orders")
+            .update({ payment_proof_path: key, status: "awaiting_confirmation" })
+            .eq("id", orderId);
+          proofSaved = true;
+        }
+      }
+
+      await setState(from.id, { ...user.state, mode: "idle", pending_order_id: undefined });
+
+      if (proofSaved) {
+        await tg("sendMessage", {
+          chat_id,
+          text: `📨 Спасибо! Чек получен. Заказ #${orderId} отправлен на проверку. Как только продавец подтвердит оплату — бот пришлёт файлы.`,
+          reply_markup: mainMenu(),
+        });
+        await notifyAdminNewOrder(orderId, proofFileId, proofKind);
+      } else {
+        const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
         await supabaseAdmin
           .from("orders")
-          .update({ payment_proof_path: key, status: "awaiting_confirmation" })
+          .update({ status: "awaiting_confirmation" })
           .eq("id", orderId);
+        await tg("sendMessage", {
+          chat_id,
+          text: `⚠️ Не удалось сохранить чек заказа #${orderId}. Продавец проверит заказ вручную. Если хотите — попробуйте отправить чек ещё раз.`,
+          reply_markup: mainMenu(),
+        });
+        await notifyAdminNewOrder(orderId, null, null);
       }
-      await setState(from.id, { ...user.state, mode: "idle", pending_order_id: undefined });
-      await tg("sendMessage", {
-        chat_id,
-        text: `📨 Спасибо! Скриншот получен. Заказ #${orderId} отправлен на проверку. Как только продавец подтвердит оплату — бот пришлёт файлы.`,
-        reply_markup: mainMenu(),
-      });
-      await notifyAdminNewOrder(orderId, biggest.file_id);
       return;
     }
 

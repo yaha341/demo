@@ -138,18 +138,6 @@ export async function deliverOrder(orderId: number) {
   return { ok: true as const };
 }
 
-export const getScreenshotUrl = createServerFn({ method: "GET" })
-  .validator((d: string) => d)
-  .handler(async (ctx) => {
-    await requireAdmin();
-    const path = ctx.data;
-    const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-    const { data } = await supabaseAdmin.storage
-      .from("payment-proofs")
-      .createSignedUrl(path, 60 * 60);
-    return data?.signedUrl || null;
-  });
-
 export async function sendFileToUser(chat_id: number, path: string, downloadName: string, caption: string, quantity: number) {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { data: signed, error: signErr } = await supabaseAdmin.storage

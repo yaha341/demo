@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
@@ -63,20 +63,44 @@ const empty: Product = {
   country_prices: {},
 };
 
+// Карта расширений → MIME. Браузеры не знают тип для .7z и некоторых других
+// архивов (отдают application/octet-stream), из-за чего Supabase с whitelist
+// отклонял загрузку. Определяем тип по расширению файла.
+const MIME_BY_EXT: Record<string, string> = {
+  ".7z": "application/x-7z-compressed",
+  ".zip": "application/zip",
+  ".rar": "application/vnd.rar",
+  ".tar": "application/x-tar",
+  ".gz": "application/gzip",
+  ".pdf": "application/pdf",
+  ".doc": "application/msword",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+};
+
+function mimeForFile(filename: string, fallback?: string): string {
+  const ext = (filename.match(/\.[^.]+$/) || [""])[0].toLowerCase();
+  return MIME_BY_EXT[ext] || fallback || "application/octet-stream";
+}
+
 async function uploadFile(file: File, bucket: "product-images" | "product-files") {
   // 1. Получаем одноразовую ссылку для прямой загрузки от сервера
   const { path, name, signedUrl } = await getSignedUploadUrl({ data: { bucket, filename: file.name } });
 
-  // 2. Грузим файл напрямую в Supabase в обход лимитов Vercel
+  // 2. Грузим файл напрямую в Supabase в обход лимитов Vercel.
+  // Для файлов товаров определяем Content-Type по расширению (надёжнее, чем
+  // file.type, который пуст для .7z). Для картинок доверяем типу браузера.
+  const contentType =
+    bucket === "product-files" ? mimeForFile(file.name, file.type) : file.type || "application/octet-stream";
+
   const resUpload = await fetch(signedUrl, {
     method: "PUT",
     body: file,
     headers: {
-      "Content-Type": file.type || "application/octet-stream",
+      "Content-Type": contentType,
     },
   });
   if (!resUpload.ok) throw new Error(await resUpload.text());
-  
+
   return { path, name };
 }
 
@@ -91,9 +115,21 @@ function ProductsPage() {
   });
 
   const list = (products.data ?? []) as any[];
+  const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Product | null>(null);
   const [images, setImages] = useState<Img[]>([]);
   const [saving, setSaving] = useState(false);
+
+  // Клиентская фильтрация по названию / ключевым словам / описанию.
+  // 300+ товаров обрабатываются мгновенно, бэкенд-поиск не требуется.
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((p) => {
+      const hay = [p.name, p.keywords, p.description].filter(Boolean).join(" ").toLowerCase();
+      return hay.includes(q);
+    });
+  }, [list, search]);
 
   function startNew() {
     setEditing({ ...empty });
@@ -376,11 +412,25 @@ function ProductsPage() {
           </div>
         </div>
       ) : (
+        <>
+        <div className="bg-card border rounded-lg p-4 space-y-3">
+          <Label>🔍 Поиск по материалам</Label>
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Название, ключевое слово или описание…"
+          />
+          <p className="text-xs text-muted-foreground">
+            Найдено: {filtered.length} из {list.length}
+          </p>
+        </div>
         <div className="bg-card border rounded-lg divide-y">
-          {list.length === 0 && (
-            <div className="p-4 text-sm text-muted-foreground">Пока нет товаров.</div>
+          {filtered.length === 0 && (
+            <div className="p-4 text-sm text-muted-foreground">
+              {list.length === 0 ? "Пока нет товаров." : "Ничего не найдено."}
+            </div>
           )}
-          {list.map((p) => (
+          {filtered.map((p) => (
             <div key={p.id} className="p-3 flex items-center gap-3">
               {p.product_images?.[0] ? (
                 <img
@@ -419,6 +469,7 @@ function ProductsPage() {
             </div>
           ))}
         </div>
+        </>
       )}
     </div>
   );

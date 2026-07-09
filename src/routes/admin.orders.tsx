@@ -1,8 +1,25 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components-ui/button";
-import { confirmOrder, listOrders, rejectOrder, getScreenshotUrl } from "@/lib/orders.functions";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components-ui/dialog";
+import { confirmOrder, listOrders, rejectOrder } from "@/lib/orders.functions";
 import { useState } from "react";
+
+// Тип чека определяется по расширению сохранённого пути.
+// Фото показываем через <img>, PDF — через <iframe>, прочее — ссылкой на скачивание.
+const IMAGE_EXTS = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "heic"];
+
+function proofKind(path: string): "image" | "pdf" | "other" {
+  const ext = (path.split(".").pop() || "").toLowerCase();
+  if (ext === "pdf") return "pdf";
+  if (IMAGE_EXTS.includes(ext)) return "image";
+  return "other";
+}
 
 export const Route = createFileRoute("/admin/orders")({
   component: OrdersPage,
@@ -44,14 +61,10 @@ function OrdersPage() {
     }
   }
 
-  async function onViewScreenshot(path: string) {
-    try {
-      const url = await getScreenshotUrl({ data: path });
-      if (url) window.open(url, "_blank");
-      else alert("Не удалось загрузить скриншот");
-    } catch (e: any) {
-      alert(e.message);
-    }
+  const [proofModal, setProofModal] = useState<{ path: string } | null>(null);
+
+  function onViewScreenshot(path: string) {
+    setProofModal({ path });
   }
 
   return (
@@ -117,6 +130,41 @@ function OrdersPage() {
           );
         })}
       </div>
+
+      {/* Модалка просмотра чека оплаты */}
+      <Dialog open={!!proofModal} onOpenChange={(open) => !open && setProofModal(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Чек оплаты</DialogTitle>
+          </DialogHeader>
+          {proofModal && (() => {
+            const kind = proofKind(proofModal.path);
+            const src = `/api/admin/file/${proofModal.path}?bucket=payment-proofs`;
+            if (kind === "image") {
+              return <img src={src} alt="Чек оплаты" className="max-h-[80vh] mx-auto rounded" />;
+            }
+            if (kind === "pdf") {
+              return (
+                <iframe
+                  src={src}
+                  className="w-full h-[80vh] rounded border"
+                  title="Чек оплаты"
+                />
+              );
+            }
+            return (
+              <div className="text-center py-6 space-y-3">
+                <p className="text-muted-foreground">Формат не поддерживается для предпросмотра.</p>
+                <Button asChild>
+                  <a href={src} target="_blank" rel="noreferrer">
+                    📥 Скачать чек
+                  </a>
+                </Button>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
