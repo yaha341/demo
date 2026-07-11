@@ -1,6 +1,6 @@
 -- === ПОЛНАЯ НАСТРОЙКА SUPABASE ДЛЯ TELEGRAM БОТА ===
 -- Выполните этот скрипт по частям в SQL Editor Supabase
--- https://supabase.com/dashboard/project/fnwksbasxakktscdjlfp/sql
+-- https://supabase.com/dashboard/project/oqqbbafcrcbqtffectun/sql
 
 -- ============================================
 -- ЧАСТЬ 1: Создание таблиц базы данных
