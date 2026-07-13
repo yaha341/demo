@@ -250,10 +250,16 @@ async function addToCart(telegram_id: number, product_id: string) {
 async function showCart(chat_id: number, user: BotUser) {
   const telegram_id = user.telegram_id;
   const s = await db();
-  const { data: items } = await s
+  const { data: items, error } = await s
     .from("cart_items")
     .select("id, quantity, products(id, name, price, currency, country_prices)")
     .eq("telegram_id", telegram_id);
+    
+  if (error) {
+    await tg("sendMessage", { chat_id, text: `⚠️ Ошибка чтения корзины: ${error.message}` });
+    return;
+  }
+  
   if (!items?.length) {
     await tg("sendMessage", { chat_id, text: "🛒 Корзина пуста." });
     return;
