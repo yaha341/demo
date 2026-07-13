@@ -473,8 +473,8 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
   
   if (rkEnabled) {
     const testMode = getSetting("robokassa_test_mode") === "true";
-    const login = getSetting("robokassa_login");
-    const pass1 = testMode ? getSetting("robokassa_pass1_test") : getSetting("robokassa_pass1");
+    const login = getSetting("robokassa_login")?.trim();
+    const pass1 = testMode ? getSetting("robokassa_pass1_test")?.trim() : getSetting("robokassa_pass1")?.trim();
     const invId = order.id;
     const outSum = total.toFixed(2);
     const isTest = testMode ? 1 : 0;
