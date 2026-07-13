@@ -311,11 +311,17 @@ async function showCart(chat_id: number, user: BotUser) {
 async function startCheckout(chat_id: number, user: BotUser) {
   const telegram_id = user.telegram_id;
   const s = await db();
-  const { count } = await s
+  const { data: items, error } = await s
     .from("cart_items")
-    .select("id", { count: "exact", head: true })
+    .select("id")
     .eq("telegram_id", telegram_id);
-  if (!count) {
+    
+  if (error) {
+    await tg("sendMessage", { chat_id, text: `⚠️ Ошибка проверки корзины: ${error.message}` });
+    return;
+  }
+  
+  if (!items || items.length === 0) {
     await tg("sendMessage", { chat_id, text: "🛒 Корзина пуста." });
     return;
   }
@@ -378,11 +384,17 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
     .select("*")
     .eq("country_code", country_code)
     .single();
-  const { data: items } = await s
+  const { data: items, error } = await s
     .from("cart_items")
     .select("id, quantity, products(id, name, price, currency, file_path, file_name, file_path_kz, file_name_kz, country_prices)")
     .eq("telegram_id", telegram_id);
-  if (!items?.length) {
+    
+  if (error) {
+    await tg("sendMessage", { chat_id, text: `⚠️ Ошибка при получении корзины: ${error.message}` });
+    return;
+  }
+  
+  if (!items || items.length === 0) {
     await tg("sendMessage", { chat_id, text: "🛒 Корзина пуста." });
     return;
   }
