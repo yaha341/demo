@@ -481,7 +481,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
     
     if (login && pass1) {
       const signature = crypto.createHash("md5").update(`${login}:${outSum}:${invId}:${pass1}`).digest("hex");
-      const paymentUrl = `https://auth.robokassa.ru/Merchant/Index.aspx?MerchantLogin=${login}&OutSum=${outSum}&InvId=${invId}&SignatureValue=${signature}&IsTest=${isTest}`;
+      const paymentUrl = `https://auth.robokassa.kz/Merchant/Index.aspx?MerchantLogin=${login}&OutSum=${outSum}&InvId=${invId}&SignatureValue=${signature}&IsTest=${isTest}`;
       
       await setState(telegram_id, { mode: "awaiting_payment", pending_order_id: order.id as number });
       
