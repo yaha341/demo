@@ -226,19 +226,24 @@ function escapeHtml(t: string): string {
 
 async function addToCart(telegram_id: number, product_id: string) {
   const s = await db();
-  const { data: existing } = await s
+  const { data: existing, error: err1 } = await s
     .from("cart_items")
     .select("id, quantity")
     .eq("telegram_id", telegram_id)
     .eq("product_id", product_id)
     .maybeSingle();
+    
+  if (err1) throw new Error("Ошибка чтения корзины: " + err1.message);
+
   if (existing) {
-    await s
+    const { error: err2 } = await s
       .from("cart_items")
       .update({ quantity: (existing.quantity as number) + 1 })
       .eq("id", existing.id);
+    if (err2) throw new Error("Ошибка обновления корзины: " + err2.message);
   } else {
-    await s.from("cart_items").insert({ telegram_id, product_id, quantity: 1 });
+    const { error: err3 } = await s.from("cart_items").insert({ telegram_id, product_id, quantity: 1 });
+    if (err3) throw new Error("Ошибка добавления в корзину: " + err3.message);
   }
 }
 
@@ -722,8 +727,12 @@ export async function handleUpdate(update: any) {
         return showSearch(chat_id, user, query, offset);
       }
       if (data.startsWith("add:")) {
-        await addToCart(from_id, data.slice(4));
-        await tg("sendMessage", { chat_id, text: "✅ Добавлено в корзину." });
+        try {
+          await addToCart(from_id, data.slice(4));
+          await tg("sendMessage", { chat_id, text: "✅ Добавлено в корзину." });
+        } catch (e: any) {
+          await tg("sendMessage", { chat_id, text: `⚠️ ${e.message}` });
+        }
         return;
       }
       if (data.startsWith("rem:")) {
