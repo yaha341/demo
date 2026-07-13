@@ -1,5 +1,6 @@
 import { tg, downloadTelegramFile } from "./telegram.server";
 import { convertAmount } from "./currency.server";
+import crypto from "crypto";
 
 type BotUser = {
   telegram_id: number;
@@ -441,6 +442,37 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
   );
   await s.from("order_items").insert(rows);
   await s.from("cart_items").delete().eq("telegram_id", telegram_id);
+
+  const { data: settings } = await s.from("app_settings").select("*");
+  const getSetting = (key: string) => settings?.find(setting => setting.key === key)?.value;
+  
+  const rkEnabled = getSetting("robokassa_enabled") === "true";
+  
+  if (rkEnabled) {
+    const testMode = getSetting("robokassa_test_mode") === "true";
+    const login = getSetting("robokassa_login");
+    const pass1 = testMode ? getSetting("robokassa_pass1_test") : getSetting("robokassa_pass1");
+    const invId = order.id;
+    const outSum = total.toFixed(2);
+    const isTest = testMode ? 1 : 0;
+    
+    if (login && pass1) {
+      const signature = crypto.createHash("md5").update(`${login}:${outSum}:${invId}:${pass1}`).digest("hex");
+      const paymentUrl = `https://auth.robokassa.ru/Merchant/Index.aspx?MerchantLogin=${login}&OutSum=${outSum}&InvId=${invId}&SignatureValue=${signature}&IsTest=${isTest}`;
+      
+      await setState(telegram_id, { mode: "awaiting_payment", pending_order_id: order.id as number });
+      
+      await tg("sendMessage", {
+        chat_id,
+        text: `🧾 <b>Заказ #${order.id}</b> создан.\n\nСумма к оплате: <b>${total} ${currency}</b>\n\nДля автоматической оплаты и получения товара нажмите на кнопку ниже:`,
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [[{ text: "💳 Оплатить через Robokassa", url: paymentUrl }]]
+        }
+      });
+      return;
+    }
+  }
 
   await setState(telegram_id, { mode: "awaiting_proof", pending_order_id: order.id as number });
 

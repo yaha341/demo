@@ -22,16 +22,37 @@ function SettingsPage() {
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => getSettings() });
   const [adminChatId, setAdminChatId] = useState("");
   const [adminContactLink, setAdminContactLink] = useState("");
+  const [rkLogin, setRkLogin] = useState("");
+  const [rkPass1, setRkPass1] = useState("");
+  const [rkPass2, setRkPass2] = useState("");
+  const [rkPass1Test, setRkPass1Test] = useState("");
+  const [rkPass2Test, setRkPass2Test] = useState("");
+  const [rkTestMode, setRkTestMode] = useState(false);
+  const [rkEnabled, setRkEnabled] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     setAdminChatId(settings.data?.admin_chat_id ?? "");
     setAdminContactLink(settings.data?.admin_contact_link ?? "");
+    setRkLogin(settings.data?.robokassa_login ?? "");
+    setRkPass1(settings.data?.robokassa_pass1 ?? "");
+    setRkPass2(settings.data?.robokassa_pass2 ?? "");
+    setRkPass1Test(settings.data?.robokassa_pass1_test ?? "");
+    setRkPass2Test(settings.data?.robokassa_pass2_test ?? "");
+    setRkTestMode(settings.data?.robokassa_test_mode === "true");
+    setRkEnabled(settings.data?.robokassa_enabled === "true");
   }, [settings.data]);
 
   async function onSave() {
     await saveSetting({ data: { key: "admin_chat_id", value: adminChatId.trim() } });
     await saveSetting({ data: { key: "admin_contact_link", value: adminContactLink.trim() } });
+    await saveSetting({ data: { key: "robokassa_login", value: rkLogin.trim() } });
+    await saveSetting({ data: { key: "robokassa_pass1", value: rkPass1.trim() } });
+    await saveSetting({ data: { key: "robokassa_pass2", value: rkPass2.trim() } });
+    await saveSetting({ data: { key: "robokassa_pass1_test", value: rkPass1Test.trim() } });
+    await saveSetting({ data: { key: "robokassa_pass2_test", value: rkPass2Test.trim() } });
+    await saveSetting({ data: { key: "robokassa_test_mode", value: rkTestMode ? "true" : "false" } });
+    await saveSetting({ data: { key: "robokassa_enabled", value: rkEnabled ? "true" : "false" } });
     qc.invalidateQueries({ queryKey: ["settings"] });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -110,6 +131,56 @@ function SettingsPage() {
         </div>
         <div className="flex items-center gap-2 pt-2">
           <Button onClick={onSave}>Сохранить</Button>
+          {saved && <span className="text-sm text-green-600">Сохранено ✓</span>}
+        </div>
+      </div>
+
+      <div className="bg-card border rounded-lg p-4 space-y-4">
+        <h2 className="text-lg font-semibold">Настройки эквайринга Robokassa</h2>
+        
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <Checkbox checked={rkEnabled} onCheckedChange={(c) => setRkEnabled(!!c)} />
+          <span>Включить оплату через Robokassa (автовыдача)</span>
+        </label>
+        
+        {rkEnabled && (
+          <div className="space-y-4 pt-2 border-t border-border/50">
+            <div className="space-y-2">
+              <Label>Идентификатор магазина (MerchantLogin)</Label>
+              <Input value={rkLogin} onChange={(e) => setRkLogin(e.target.value)} placeholder="my_shop_id" />
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Пароль #1 (Боевой)</Label>
+                <Input type="password" value={rkPass1} onChange={(e) => setRkPass1(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Пароль #2 (Боевой)</Label>
+                <Input type="password" value={rkPass2} onChange={(e) => setRkPass2(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 pt-2">
+              <div className="space-y-2">
+                <Label>Пароль #1 (Тестовый)</Label>
+                <Input type="password" value={rkPass1Test} onChange={(e) => setRkPass1Test(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Пароль #2 (Тестовый)</Label>
+                <Input type="password" value={rkPass2Test} onChange={(e) => setRkPass2Test(e.target.value)} />
+              </div>
+            </div>
+
+            <label className="flex items-center gap-2 text-sm cursor-pointer pt-2">
+              <Checkbox checked={rkTestMode} onCheckedChange={(c) => setRkTestMode(!!c)} />
+              <span>Тестовый режим (IsTest=1)</span>
+            </label>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 pt-2">
+          <Button onClick={onSave}>Сохранить Robokassa</Button>
           {saved && <span className="text-sm text-green-600">Сохранено ✓</span>}
         </div>
       </div>
