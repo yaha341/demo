@@ -384,13 +384,13 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
     .select("*")
     .eq("country_code", country_code)
     .single();
-  const { data: items, error } = await s
+  const { data: items, error: itemsError } = await s
     .from("cart_items")
     .select("id, quantity, products(id, name, price, currency, file_path, file_name, file_path_kz, file_name_kz, country_prices)")
     .eq("telegram_id", telegram_id);
     
-  if (error) {
-    await tg("sendMessage", { chat_id, text: `⚠️ Ошибка при получении корзины: ${error.message}` });
+  if (itemsError) {
+    await tg("sendMessage", { chat_id, text: `⚠️ Ошибка при получении корзины: ${itemsError.message}` });
     return;
   }
   
