@@ -51,9 +51,9 @@ async function handleRobokassaResult(request: Request) {
 
   const testMode = getSetting("robokassa_test_mode") === "true";
   
-  const pass2 = (isTest === "1" || testMode) 
+  const pass2 = ((isTest === "1" || testMode) 
     ? getSetting("robokassa_pass2_test") 
-    : getSetting("robokassa_pass2");
+    : getSetting("robokassa_pass2"))?.trim();
 
   if (!pass2) {
     return new Response("robokassa not configured", { status: 500 });

@@ -12,6 +12,11 @@ type BotUser = {
   state: { mode?: string; pending_order_id?: number; country_code?: string; country_name?: string; last_search?: string } | null;
 };
 
+function formatFkDisplay(amount: number): string {
+  const n = Math.round(Number(amount) * 100) / 100;
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
@@ -308,6 +313,69 @@ async function showCart(chat_id: number, user: BotUser) {
   });
 }
 
+async function checkAiPayPayment(chat_id: number, orderId: number) {
+  const s = await db();
+  const { data: order } = await s
+    .from("orders")
+    .select("id, status, payment_proof_path")
+    .eq("id", orderId)
+    .maybeSingle();
+
+  if (!order) {
+    await tg("sendMessage", { chat_id, text: "Заказ не найден." });
+    return;
+  }
+  if (order.status === "delivered") {
+    await tg("sendMessage", { chat_id, text: `✅ Заказ #${orderId} уже выдан.` });
+    return;
+  }
+
+  const { invoiceIdFromProof, getAiPayInvoice, isAiPayPaid } = await import("./aipay.server");
+  const invoiceId = invoiceIdFromProof(order.payment_proof_path);
+  if (!invoiceId) {
+    await tg("sendMessage", { chat_id, text: "У этого заказа нет счёта AiPay." });
+    return;
+  }
+
+  const { data: settings } = await s.from("app_settings").select("*");
+  const getSetting = (key: string) => settings?.find((row) => row.key === key)?.value;
+  const apiKey = getSetting("aipay_api_key")?.trim();
+  const companyId = getSetting("aipay_company_id")?.trim();
+  const baseUrl = getSetting("aipay_base_url")?.trim() || "https://dev.paylab.kz/api/v2";
+
+  if (!apiKey || !companyId) {
+    await tg("sendMessage", { chat_id, text: "AiPay не настроен." });
+    return;
+  }
+
+  try {
+    const invoice = await getAiPayInvoice({ apiKey, companyId, baseUrl }, invoiceId);
+    if (!isAiPayPaid(invoice)) {
+      await tg("sendMessage", {
+        chat_id,
+        text: `⏳ Заказ #${orderId}: статус счёта — <b>${invoice.status || "ожидание"}</b>.\nЕсли уже оплатили в Kaspi — подождите минуту и нажмите снова.`,
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [[{ text: "✅ Проверить ещё раз", callback_data: `aipay_check:${orderId}` }]],
+        },
+      });
+      return;
+    }
+
+    await s
+      .from("orders")
+      .update({
+        admin_note: `Paid via AiPay. Invoice ${invoice.id}. Amount: ${invoice.amount ?? "?"}`,
+      })
+      .eq("id", orderId);
+
+    const { deliverOrder } = await import("./orders.functions");
+    await deliverOrder(orderId);
+  } catch (e: any) {
+    await tg("sendMessage", { chat_id, text: `⚠️ Ошибка проверки AiPay: ${e?.message || e}` });
+  }
+}
+
 async function startCheckout(chat_id: number, user: BotUser) {
   const telegram_id = user.telegram_id;
   const s = await db();
@@ -468,6 +536,104 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
 
   const { data: settings } = await s.from("app_settings").select("*");
   const getSetting = (key: string) => settings?.find(setting => setting.key === key)?.value;
+
+  const aipayEnabled = getSetting("aipay_enabled") === "true";
+  if (aipayEnabled) {
+    const apiKey = getSetting("aipay_api_key")?.trim();
+    const companyId = getSetting("aipay_company_id")?.trim();
+    const baseUrl = getSetting("aipay_base_url")?.trim() || "https://dev.paylab.kz/api/v2";
+    const posId = getSetting("aipay_pos_id")?.trim() || undefined;
+    const phone = (user.contact_phone || "").trim();
+
+    if (apiKey && companyId && phone) {
+      try {
+        const { createAiPayInvoice, proofPathForInvoice } = await import("./aipay.server");
+        const invoice = await createAiPayInvoice(
+          { apiKey, companyId, baseUrl, posId },
+          {
+            phone,
+            amount: total,
+            message: `Заказ #${order.id}`,
+          },
+        );
+
+        await s
+          .from("orders")
+          .update({
+            payment_proof_path: proofPathForInvoice(invoice.id),
+            admin_note: `AiPay invoice ${invoice.id} (ref ${invoice.internal_id ?? invoice.ref ?? "—"})`,
+          })
+          .eq("id", order.id);
+
+        await setState(telegram_id, { mode: "awaiting_payment", pending_order_id: order.id as number });
+
+        const ref = invoice.internal_id ?? invoice.ref;
+        await tg("sendMessage", {
+          chat_id,
+          text:
+            `🧾 <b>Заказ #${order.id}</b> создан.\n\n` +
+            `Сумма: <b>${Math.round(total)} ${currency}</b>\n` +
+            `Счёт Kaspi отправлен на номер <b>${phone}</b>` +
+            (ref ? `\nНомер счёта AiPay: <b>${ref}</b>` : "") +
+            `\n\nОткройте Kaspi и подтвердите оплату. После оплаты нажмите кнопку ниже — бот выдаст файлы.`,
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [[{ text: "✅ Я оплатил — проверить", callback_data: `aipay_check:${order.id}` }]],
+          },
+        });
+        return;
+      } catch (e: any) {
+        console.error("[aipay] create invoice failed", e);
+        await tg("sendMessage", {
+          chat_id,
+          text: `⚠️ Не удалось создать счёт AiPay: ${e?.message || e}\n\nПопробуйте позже или напишите продавцу.`,
+        });
+        return;
+      }
+    }
+  }
+
+  const fkEnabled = getSetting("freekassa_enabled") === "true";
+  if (fkEnabled) {
+    const merchantId = getSetting("freekassa_merchant_id")?.trim();
+    const secret1 = getSetting("freekassa_secret1")?.trim();
+    const secret2 = getSetting("freekassa_secret2")?.trim();
+    const fkCurrency = (getSetting("freekassa_currency")?.trim() || "KZT").toUpperCase();
+
+    if (merchantId && secret1 && secret2) {
+      // FreeKassa form currency is fixed in cabinet settings; amount should match that currency.
+      let payAmount = total;
+      let payCurrency = currency.toUpperCase();
+      if (payCurrency !== fkCurrency) {
+        try {
+          payAmount = await convertAmount(total, currency, fkCurrency);
+          payCurrency = fkCurrency;
+        } catch (e) {
+          console.warn("[freekassa] currency convert failed, using order currency", e);
+        }
+      }
+
+      const { buildFreeKassaPaymentUrl } = await import("./freekassa.server");
+      const paymentUrl = buildFreeKassaPaymentUrl(
+        { merchantId, secret1, secret2, currency: fkCurrency },
+        { amount: payAmount, orderId: order.id as number, currency: payCurrency === fkCurrency ? fkCurrency : payCurrency },
+      );
+
+      await setState(telegram_id, { mode: "awaiting_payment", pending_order_id: order.id as number });
+      await tg("sendMessage", {
+        chat_id,
+        text:
+          `🧾 <b>Заказ #${order.id}</b> создан.\n\n` +
+          `Сумма к оплате: <b>${formatFkDisplay(payAmount)} ${payCurrency}</b>\n\n` +
+          `Нажмите кнопку ниже для оплаты через FreeKassa — после оплаты файлы придут автоматически.`,
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [[{ text: "💳 Оплатить через FreeKassa", url: paymentUrl }]],
+        },
+      });
+      return;
+    }
+  }
   
   const rkEnabled = getSetting("robokassa_enabled") === "true";
   
@@ -481,7 +647,15 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
     
     if (login && pass1) {
       const signature = crypto.createHash("md5").update(`${login}:${outSum}:${invId}:${pass1}`).digest("hex");
-      const paymentUrl = `https://auth.robokassa.kz/Merchant/Index.aspx?MerchantLogin=${login}&OutSum=${outSum}&InvId=${invId}&SignatureValue=${signature}&IsTest=${isTest}`;
+      const desc = encodeURIComponent(`Заказ #${invId}`);
+      const paymentUrl =
+        `https://auth.robokassa.kz/Merchant/Index.aspx` +
+        `?MerchantLogin=${encodeURIComponent(login)}` +
+        `&OutSum=${outSum}` +
+        `&InvId=${invId}` +
+        `&Description=${desc}` +
+        `&SignatureValue=${signature}` +
+        `&IsTest=${isTest}`;
       
       await setState(telegram_id, { mode: "awaiting_payment", pending_order_id: order.id as number });
       
@@ -765,6 +939,10 @@ export async function handleUpdate(update: any) {
         return;
       }
       if (data === "checkout") return startCheckout(chat_id, user);
+      if (data.startsWith("aipay_check:")) {
+        const orderId = Number(data.slice("aipay_check:".length));
+        return checkAiPayPayment(chat_id, orderId);
+      }
       if (data.startsWith("country:")) return placeOrder(chat_id, user, data.slice(8));
       
       if (data.startsWith("setcountry:")) {

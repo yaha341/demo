@@ -21,6 +21,8 @@ import { Route as AdminCategoriesRouteImport } from './routes/admin.categories'
 import { Route as ApiAdminUploadRouteImport } from './routes/api/admin/upload'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram/webhook'
 import { Route as ApiPublicRobokassaResultRouteImport } from './routes/api/public/robokassa/result'
+import { Route as ApiPublicAipayWebhookRouteImport } from './routes/api/public/aipay/webhook'
+import { Route as ApiPublicFreekassaResultRouteImport } from './routes/api/public/freekassa/result'
 import { Route as ApiPublicImgSplatRouteImport } from './routes/api/public/img/$'
 import { Route as ApiAdminFileSplatRouteImport } from './routes/api/admin/file/$'
 
@@ -86,6 +88,17 @@ const ApiPublicRobokassaResultRoute =
     path: '/api/public/robokassa/result',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicAipayWebhookRoute = ApiPublicAipayWebhookRouteImport.update({
+  id: '/api/public/aipay/webhook',
+  path: '/api/public/aipay/webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicFreekassaResultRoute =
+  ApiPublicFreekassaResultRouteImport.update({
+    id: '/api/public/freekassa/result',
+    path: '/api/public/freekassa/result',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicImgSplatRoute = ApiPublicImgSplatRouteImport.update({
   id: '/api/public/img/$',
   path: '/api/public/img/$',
@@ -111,6 +124,8 @@ export interface FileRoutesByFullPath {
   '/api/admin/file/$': typeof ApiAdminFileSplatRoute
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
   '/api/public/robokassa/result': typeof ApiPublicRobokassaResultRoute
+  '/api/public/aipay/webhook': typeof ApiPublicAipayWebhookRoute
+  '/api/public/freekassa/result': typeof ApiPublicFreekassaResultRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
 export interface FileRoutesByTo {
@@ -126,6 +141,8 @@ export interface FileRoutesByTo {
   '/api/admin/file/$': typeof ApiAdminFileSplatRoute
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
   '/api/public/robokassa/result': typeof ApiPublicRobokassaResultRoute
+  '/api/public/aipay/webhook': typeof ApiPublicAipayWebhookRoute
+  '/api/public/freekassa/result': typeof ApiPublicFreekassaResultRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
 export interface FileRoutesById {
@@ -143,6 +160,8 @@ export interface FileRoutesById {
   '/api/admin/file/$': typeof ApiAdminFileSplatRoute
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
   '/api/public/robokassa/result': typeof ApiPublicRobokassaResultRoute
+  '/api/public/aipay/webhook': typeof ApiPublicAipayWebhookRoute
+  '/api/public/freekassa/result': typeof ApiPublicFreekassaResultRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
 export interface FileRouteTypes {
@@ -161,6 +180,8 @@ export interface FileRouteTypes {
     | '/api/admin/file/$'
     | '/api/public/img/$'
     | '/api/public/robokassa/result'
+    | '/api/public/aipay/webhook'
+    | '/api/public/freekassa/result'
     | '/api/public/telegram/webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -176,6 +197,8 @@ export interface FileRouteTypes {
     | '/api/admin/file/$'
     | '/api/public/img/$'
     | '/api/public/robokassa/result'
+    | '/api/public/aipay/webhook'
+    | '/api/public/freekassa/result'
     | '/api/public/telegram/webhook'
   id:
     | '__root__'
@@ -192,6 +215,8 @@ export interface FileRouteTypes {
     | '/api/admin/file/$'
     | '/api/public/img/$'
     | '/api/public/robokassa/result'
+    | '/api/public/aipay/webhook'
+    | '/api/public/freekassa/result'
     | '/api/public/telegram/webhook'
   fileRoutesById: FileRoutesById
 }
@@ -203,6 +228,8 @@ export interface RootRouteChildren {
   ApiAdminFileSplatRoute: typeof ApiAdminFileSplatRoute
   ApiPublicImgSplatRoute: typeof ApiPublicImgSplatRoute
   ApiPublicRobokassaResultRoute: typeof ApiPublicRobokassaResultRoute
+  ApiPublicAipayWebhookRoute: typeof ApiPublicAipayWebhookRoute
+  ApiPublicFreekassaResultRoute: typeof ApiPublicFreekassaResultRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
 }
 
@@ -292,6 +319,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicRobokassaResultRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/aipay/webhook': {
+      id: '/api/public/aipay/webhook'
+      path: '/api/public/aipay/webhook'
+      fullPath: '/api/public/aipay/webhook'
+      preLoaderRoute: typeof ApiPublicAipayWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/freekassa/result': {
+      id: '/api/public/freekassa/result'
+      path: '/api/public/freekassa/result'
+      fullPath: '/api/public/freekassa/result'
+      preLoaderRoute: typeof ApiPublicFreekassaResultRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/img/$': {
       id: '/api/public/img/$'
       path: '/api/public/img/$'
@@ -337,6 +378,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAdminFileSplatRoute: ApiAdminFileSplatRoute,
   ApiPublicImgSplatRoute: ApiPublicImgSplatRoute,
   ApiPublicRobokassaResultRoute: ApiPublicRobokassaResultRoute,
+  ApiPublicAipayWebhookRoute: ApiPublicAipayWebhookRoute,
+  ApiPublicFreekassaResultRoute: ApiPublicFreekassaResultRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
 }
 export const routeTree = rootRouteImport
