@@ -661,7 +661,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
       
       await tg("sendMessage", {
         chat_id,
-        text: `🧾 <b>Заказ #${order.id}</b> создан.\n\nСумма к оплате: <b>${total} ${currency}</b>\n\nДля автоматической оплаты и получения товара нажмите на кнопку ниже:`,
+        text: `🧾 <b>Заказ #${order.id}</b> создан.\n\nСумма к оплате: <b>${total} ${currency}</b>\n\nДля автоматической оплаты нажмите кнопку ниже.\nИли оплатите вручную и <b>пришлите чек</b> (фото/PDF) в этот чат.`,
         parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [[{ text: "💳 Оплатить через Robokassa", url: paymentUrl }]]
@@ -1091,18 +1091,38 @@ export async function handleUpdate(update: any) {
       return;
     }
 
-    // Payment proof (photo OR document, e.g. PDF) while awaiting
-    if (user.state?.mode === "awaiting_proof" && user.state.pending_order_id) {
-      const orderId = user.state.pending_order_id;
+    // Payment proof (photo OR document).
+    // Bug: Robokassa/AiPay/FreeKassa set mode=awaiting_payment, but proof handler
+    // used to require awaiting_proof — receipts were ignored.
+    const proofModes = new Set(["awaiting_proof", "awaiting_payment"]);
+    let proofOrderId: number | undefined =
+      proofModes.has(String(user.state?.mode || "")) && user.state?.pending_order_id
+        ? Number(user.state.pending_order_id)
+        : undefined;
 
-      // Только фото или документ считаются чеком; иначе подсказка
-      if (!msg.photo && !msg.document) {
-        await tg("sendMessage", {
-          chat_id,
-          text: "📨 Пришлите, пожалуйста, чек об оплате — фото или файл (например, PDF).",
-        });
-        return;
-      }
+    if (!proofOrderId && (msg.photo || msg.document)) {
+      const s = await db();
+      const { data: openOrder } = await s
+        .from("orders")
+        .select("id")
+        .eq("telegram_id", from.id)
+        .eq("status", "awaiting_payment")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (openOrder?.id) proofOrderId = Number(openOrder.id);
+    }
+
+    if (user.state?.mode === "awaiting_proof" && user.state.pending_order_id && !msg.photo && !msg.document) {
+      await tg("sendMessage", {
+        chat_id,
+        text: "📨 Пришлите, пожалуйста, чек об оплате — фото или файл (например, PDF).",
+      });
+      return;
+    }
+
+    if (proofOrderId && (msg.photo || msg.document)) {
+      const orderId = proofOrderId;
 
       // Определяем источник чека и расширение сохраняемого файла.
       // Расширение важно: админ-панель определяет тип чека по расширению пути.
